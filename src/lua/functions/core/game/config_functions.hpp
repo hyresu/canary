@@ -135,6 +135,7 @@ class ConfigFunctions final : LuaScriptInterface {
 			registerEnumIn(L, "configKeys", RATE_NPC_HEALTH)
 			registerEnumIn(L, "configKeys", RATE_NPC_ATTACK)
 			registerEnumIn(L, "configKeys", RATE_NPC_DEFENSE)
+			registerEnumIn(L, "configKeys", TIME_GMT)
 			#undef registerEnumIn
 		}
 
