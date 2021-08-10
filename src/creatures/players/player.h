@@ -52,6 +52,7 @@ class SchedulerTask;
 class Bed;
 class Guild;
 class Imbuement;
+class StoreOffers;
 
 struct OpenContainer {
 	Container* container;
@@ -1072,6 +1073,58 @@ class Player final : public Creature, public Cylinder
 			}
 		}
 
+		// GameStore
+		void openStore() {
+			if (client) {
+				client->openStore();
+			}
+		}
+		void updateCoinBalance() {
+			if (client) {
+				client->updateCoinBalance();
+			}
+		}
+
+		void sendStoreHome() {
+			if (client) {
+				client->sendStoreHome();
+			}
+		}
+		void sendStoreHistory(uint32_t totalPages, uint32_t pages, std::vector<StoreHistory> filter) {
+			if (client) {
+				client->sendStoreHistory(totalPages, pages, filter);
+			}
+		}
+		void sendStorePurchaseSuccessful(const std::string& message) {
+			if (client) {
+				client->sendStorePurchaseSuccessful(message);
+			}
+		}
+		void sendStoreError(uint8_t errorType, std::string message) {
+			if (client) {
+				client->sendStoreError(errorType, message);
+			}
+		}
+		void sendOfferDescription(uint32_t id, std::string desc) {
+			if (client) {
+				client->sendOfferDescription(id, desc);
+			}
+		}
+		void sendShowStoreOffers(StoreOffers* offers) {
+			if (client) {
+				client->sendShowStoreOffers(offers);
+			}
+		}
+
+		uint16_t getEntriesPerPage() {
+			return entriesPerPage;
+		}
+		void setEntriesPerPage(uint16_t entriesPage) {
+			entriesPerPage = entriesPage;
+		}
+
+		bool removeFrags(uint8_t count = 1);
+
 		//event methods
 		void onUpdateTileItem(const Tile* tile, const Position& pos, const Item* oldItem,
                               const ItemType& oldType, const Item* newItem,
@@ -1925,6 +1978,8 @@ class Player final : public Creature, public Cylinder
 		uint64_t lastAttack = 0;
 		uint64_t bankBalance = 0;
 		uint64_t lastQuestlogUpdate = 0;
+		uint64_t asyncOngoingTasks = 0;
+
 		int64_t lastFailedFollow = 0;
 		int64_t skullTicks = 0;
 		int64_t lastWalkthroughAttempt = 0;
@@ -1939,8 +1994,6 @@ class Player final : public Creature, public Cylinder
 		int64_t lastWalking = 0;
 
 		uint32_t lastUpdateCoin = OTSYS_TIME();
-
-		uint64_t asyncOngoingTasks = 0;
 
 		BedItem* bedItem = nullptr;
 		Guild* guild = nullptr;
@@ -1982,6 +2035,7 @@ class Player final : public Creature, public Cylinder
 		uint32_t windowTextId = 0;
 		uint32_t editListId = 0;
 		uint32_t manaMax = 0;
+
 		int32_t varSkills[SKILL_LAST + 1] = {};
 		int32_t varStats[STAT_LAST + 1] = {};
 		int32_t shopCallback = -1;
@@ -1994,6 +2048,7 @@ class Player final : public Creature, public Cylinder
 		int32_t tournamentCoinBalance = 0;
 
 		uint16_t expBoostStamina = 0;
+		uint16_t entriesPerPage = 26;
 
 		uint32_t coinBalance = 0;
 		uint32_t premiumDays = 0;
