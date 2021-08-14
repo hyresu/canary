@@ -2513,7 +2513,7 @@ void ProtocolGame::parseMarketCancelOffer(NetworkMessage &msg)
 		addGameTask(&Game::playerCancelMarketOffer, player->getID(), timestamp, counter);
 	}
 
-	updateCoinBalance();
+	updateStoreCoinBalance();
 }
 
 void ProtocolGame::parseMarketAcceptOffer(NetworkMessage &msg)
@@ -2526,7 +2526,7 @@ void ProtocolGame::parseMarketAcceptOffer(NetworkMessage &msg)
 		addGameTask(&Game::playerAcceptMarketOffer, player->getID(), timestamp, counter, amount);
 	}
 
-	updateCoinBalance();
+	updateStoreCoinBalance();
 }
 
 void ProtocolGame::parseModalWindowAnswer(NetworkMessage &msg)
@@ -3984,53 +3984,57 @@ void ProtocolGame::sendMarketEnter(uint32_t depotId)
 
 	writeToOutputBuffer(msg);
 
-	updateCoinBalance();
+	updateStoreCoinBalance();
 	sendResourcesBalance(player->getMoney(), player->getBankBalance());
 }
 
-void ProtocolGame::sendCoinBalance()
+void ProtocolGame::sendStoreCoinBalance()
 {
 	if (!player)
 	{
 		return;
 	}
 
-	// send is updating
-	// TODO: export this to it own function
 	NetworkMessage msg;
+	// Updating balance
+	// TODO: export this to it own function
 	msg.addByte(0xF2);
 	msg.addByte(0x01);
 	writeToOutputBuffer(msg);
 
 	msg.reset();
 
-	// send update
+	// Coins balance
 	msg.addByte(0xDF);
 	msg.addByte(0x01);
 
-	msg.add<uint32_t>(player->coinBalance); // Normal Coins
-	msg.add<uint32_t>(player->coinBalance); // Transferable Coins
-	msg.add<uint32_t>(player->coinBalance); // Reserved Auction Coins
-	msg.add<uint32_t>(0);					// Tournament Coins
+	// Total coins
+	msg.add<uint32_t>(player->getStoreCoinBalance(COIN_TYPE_DEFAULT));
+	// Transferable coins
+	msg.add<uint32_t>(player->getStoreCoinBalance(COIN_TYPE_TRANSFERABLE));
+	// Reserved Auction Coins
+	// Version 1220+
+	msg.add<uint32_t>(0);
+	// Tournament Coins
+	msg.add<uint32_t>(player->getStoreCoinBalance(COIN_TYPE_TOURNAMENT));
 
 	writeToOutputBuffer(msg);
 }
 
-void ProtocolGame::updateCoinBalance()
+void ProtocolGame::updateStoreCoinBalance()
 {
 	g_dispatcher.addTask(
-		createTask(std::bind([](ProtocolGame *client) {
-			if (client && client->player)
-			{
-				account::Account account;
-				account.LoadAccountDB(client->player->getAccount());
-				uint32_t coins;
-				account.GetCoins(COIN_TYPE_DEFAULT);
-				client->player->coinBalance = coins;
-				client->sendCoinBalance();
+		createTask(std::bind([](uint32_t playerId) {
+			Player* player = g_game.getPlayerByID(playerId);
+			if (player != nullptr) {
+				account::Account account(player->getAccount());
+				account.LoadAccountDB();
+				player->coinBalance = account.GetCoins();
+				player->tournamentCoinBalance = account.GetCoins(COIN_TYPE_TOURNAMENT);
+				player->sendStoreCoinBalance();
 			}
-		},
-                              this)));
+		}, player->getID()))
+	);
 }
 
 void ProtocolGame::sendMarketLeave()
@@ -4067,7 +4071,7 @@ void ProtocolGame::sendMarketBrowseItem(uint16_t itemId, const MarketOfferList &
 		msg.addString(offer.playerName);
 	}
 
-	updateCoinBalance();
+	updateStoreCoinBalance();
 	writeToOutputBuffer(msg);
 }
 
@@ -6726,7 +6730,7 @@ void ProtocolGame::openStore()
 	}
 
 	writeToOutputBuffer(msg);
-	player->updateCoinBalance();
+	player->updateStoreCoinBalance();
 	sendStoreHome();
 }
 
