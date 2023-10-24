@@ -1,6 +1,6 @@
 local targetDestination = {
 	Position(32659, 31853, 13),
-	Position(32646, 31903, 3)
+	Position(32646, 31903, 3),
 }
 
 local whatFoolishWatch = Action()
@@ -10,7 +10,7 @@ function whatFoolishWatch.onUse(player, item, fromPosition, target, toPosition, 
 	end
 
 	local playerPos = player:getPosition()
-	if not isInArray(targetDestination, playerPos) then
+	if not table.contains(targetDestination, playerPos) then
 		return false
 	end
 
@@ -21,7 +21,7 @@ function whatFoolishWatch.onUse(player, item, fromPosition, target, toPosition, 
 
 	player:teleportTo(destination)
 	destination:sendMagicEffect(CONST_ME_TELEPORT)
-	player:say('You are travelling in time', TALKTYPE_MONSTER_SAY)
+	player:say("You are travelling in time", TALKTYPE_MONSTER_SAY)
 	return true
 end
 

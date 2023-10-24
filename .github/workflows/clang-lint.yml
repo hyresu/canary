@@ -2,8 +2,21 @@
 name: Clang-format
 on:
   pull_request:
+    paths:
+      - 'src/**'
   push:
+    paths:
+      - 'src/**'
 jobs:
+  cancel-runs:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Cancel Previous Runs
+      uses: styfle/cancel-workflow-action@0.9.1
+      with:
+        access_token: ${{ github.token }}
+
   build:
     runs-on: ubuntu-latest
     steps:
@@ -23,12 +36,12 @@ jobs:
 
       - name: Run clang format lint
         if: ${{ github.ref != 'refs/heads/main' }}
-        uses: DoozyX/clang-format-lint-action@v0.15
+        uses: DoozyX/clang-format-lint-action@v0.16.2
         with:
           source: "src"
           exclude: "src/protobuf"
           extensions: "cpp,hpp,h"
-          clangFormatVersion: 15
+          clangFormatVersion: 16
           inplace: true
 
       - name: Run add and commit

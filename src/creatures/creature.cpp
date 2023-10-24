@@ -9,11 +9,13 @@
 
 #include "pch.hpp"
 
-#include "creatures/creature.h"
+#include "creatures/creature.hpp"
 #include "declarations.hpp"
-#include "game/game.h"
-#include "creatures/monsters/monster.h"
-#include "game/scheduling/scheduler.h"
+#include "game/scheduling/dispatcher.hpp"
+#include "game/game.hpp"
+#include "creatures/monsters/monster.hpp"
+#include "game/zones/zone.hpp"
+#include "map/spectators.hpp"
 
 double Creature::speedA = 857.36;
 double Creature::speedB = 261.29;
@@ -24,14 +26,9 @@ Creature::Creature() {
 }
 
 Creature::~Creature() {
-	for (Creature* summon : summons) {
+	for (const auto &summon : m_summons) {
 		summon->setAttackedCreature(nullptr);
 		summon->removeMaster();
-	}
-
-	for (Condition* condition : conditions) {
-		condition->endCondition(this);
-		delete condition;
 	}
 }
 
@@ -55,11 +52,11 @@ bool Creature::canSee(const Position &myPos, const Position &pos, int32_t viewRa
 		&& (pos.getY() >= myPos.getY() - viewRangeY + offsetz) && (pos.getY() <= myPos.getY() + viewRangeY + offsetz);
 }
 
-bool Creature::canSee(const Position &pos) const {
-	return canSee(getPosition(), pos, Map::maxViewportX, Map::maxViewportY);
+bool Creature::canSee(const Position &pos) {
+	return canSee(getPosition(), pos, MAP_MAX_VIEW_PORT_X, MAP_MAX_VIEW_PORT_Y);
 }
 
-bool Creature::canSeeCreature(const Creature* creature) const {
+bool Creature::canSeeCreature(std::shared_ptr<Creature> creature) const {
 	if (!canSeeInvisibility() && creature->isInvisible()) {
 		return false;
 	}
@@ -68,7 +65,7 @@ bool Creature::canSeeCreature(const Creature* creature) const {
 
 void Creature::setSkull(Skulls_t newSkull) {
 	skull = newSkull;
-	g_game().updateCreatureSkull(this);
+	g_game().updateCreatureSkull(static_self_cast<Creature>());
 }
 
 int64_t Creature::getTimeSinceLastMove() const {
@@ -78,7 +75,7 @@ int64_t Creature::getTimeSinceLastMove() const {
 	return std::numeric_limits<int64_t>::max();
 }
 
-int32_t Creature::getWalkDelay(Direction dir) const {
+int32_t Creature::getWalkDelay(Direction dir) {
 	if (lastStep == 0) {
 		return 0;
 	}
@@ -88,7 +85,7 @@ int32_t Creature::getWalkDelay(Direction dir) const {
 	return stepDuration - (ct - lastStep);
 }
 
-int32_t Creature::getWalkDelay() const {
+int32_t Creature::getWalkDelay() {
 	// Used for auto-walking
 	if (lastStep == 0) {
 		return 0;
@@ -110,10 +107,13 @@ void Creature::onThink(uint32_t interval) {
 		updateMapCache();
 	}
 
+	auto followCreature = getFollowCreature();
+	auto master = getMaster();
 	if (followCreature && master != followCreature && !canSeeCreature(followCreature)) {
 		onCreatureDisappear(followCreature, false);
 	}
 
+	auto attackedCreature = getAttackedCreature();
 	if (attackedCreature && master != attackedCreature && !canSeeCreature(attackedCreature)) {
 		onCreatureDisappear(attackedCreature, false);
 	}
@@ -140,12 +140,13 @@ void Creature::onThink(uint32_t interval) {
 
 	// scripting event - onThink
 	const CreatureEventList &thinkEvents = getCreatureEvents(CREATURE_EVENT_THINK);
-	for (CreatureEvent* thinkEvent : thinkEvents) {
-		thinkEvent->executeOnThink(this, interval);
+	for (const auto creatureEventPtr : thinkEvents) {
+		creatureEventPtr->executeOnThink(static_self_cast<Creature>(), interval);
 	}
 }
 
 void Creature::onAttacking(uint32_t interval) {
+	auto attackedCreature = getAttackedCreature();
 	if (!attackedCreature) {
 		return;
 	}
@@ -170,9 +171,9 @@ void Creature::onCreatureWalk() {
 		Direction dir;
 		uint32_t flags = FLAG_IGNOREFIELDDAMAGE;
 		if (getNextStep(dir, flags)) {
-			ReturnValue ret = g_game().internalMoveCreature(this, dir, flags);
+			ReturnValue ret = g_game().internalMoveCreature(static_self_cast<Creature>(), dir, flags);
 			if (ret != RETURNVALUE_NOERROR) {
-				if (Player* player = getPlayer()) {
+				if (std::shared_ptr<Player> player = getPlayer()) {
 					player->sendCancelMessage(ret);
 					player->sendCancelWalk();
 				}
@@ -202,12 +203,12 @@ void Creature::onCreatureWalk() {
 
 void Creature::onWalk(Direction &dir) {
 	if (hasCondition(CONDITION_DRUNK)) {
-		uint32_t r = uniform_random(0, 20);
+		uint32_t r = uniform_random(0, 60);
 		if (r <= DIRECTION_DIAGONAL_MASK) {
 			if (r < DIRECTION_DIAGONAL_MASK) {
 				dir = static_cast<Direction>(r);
 			}
-			g_game().internalCreatureSay(this, TALKTYPE_MONSTER_SAY, "Hicks!", false);
+			g_game().internalCreatureSay(static_self_cast<Creature>(), TALKTYPE_MONSTER_SAY, "Hicks!", false);
 		}
 	}
 }
@@ -258,18 +259,21 @@ void Creature::addEventWalk(bool firstStep) {
 		g_game().checkCreatureWalk(getID());
 	}
 
-	eventWalk = g_scheduler().addEvent(createSchedulerTask(static_cast<uint32_t>(ticks), std::bind(&Game::checkCreatureWalk, &g_game(), getID())));
+	eventWalk = g_dispatcher().scheduleEvent(
+		static_cast<uint32_t>(ticks), std::bind(&Game::checkCreatureWalk, &g_game(), getID()),
+		"Creature::checkCreatureWalk"
+	);
 }
 
 void Creature::stopEventWalk() {
 	if (eventWalk != 0) {
-		g_scheduler().stopEvent(eventWalk);
+		g_dispatcher().stopEvent(eventWalk);
 		eventWalk = 0;
 	}
 }
 
 void Creature::updateMapCache() {
-	Tile* newTile;
+	std::shared_ptr<Tile> newTile;
 	const Position &myPos = getPosition();
 	Position pos(0, 0, myPos.z);
 
@@ -283,13 +287,13 @@ void Creature::updateMapCache() {
 	}
 }
 
-void Creature::updateTileCache(const Tile* newTile, int32_t dx, int32_t dy) {
+void Creature::updateTileCache(std::shared_ptr<Tile> newTile, int32_t dx, int32_t dy) {
 	if (std::abs(dx) <= maxWalkCacheWidth && std::abs(dy) <= maxWalkCacheHeight) {
-		localMapCache[maxWalkCacheHeight + dy][maxWalkCacheWidth + dx] = newTile && newTile->queryAdd(0, *this, 1, FLAG_PATHFINDING | FLAG_IGNOREFIELDDAMAGE) == RETURNVALUE_NOERROR;
+		localMapCache[maxWalkCacheHeight + dy][maxWalkCacheWidth + dx] = newTile && newTile->queryAdd(0, getCreature(), 1, FLAG_PATHFINDING | FLAG_IGNOREFIELDDAMAGE) == RETURNVALUE_NOERROR;
 	}
 }
 
-void Creature::updateTileCache(const Tile* upTile, const Position &pos) {
+void Creature::updateTileCache(std::shared_ptr<Tile> upTile, const Position &pos) {
 	const Position &myPos = getPosition();
 	if (pos.z == myPos.z) {
 		int32_t dx = Position::getOffsetX(pos, myPos);
@@ -298,7 +302,7 @@ void Creature::updateTileCache(const Tile* upTile, const Position &pos) {
 	}
 }
 
-int32_t Creature::getWalkCache(const Position &pos) const {
+int32_t Creature::getWalkCache(const Position &pos) {
 	if (!useCacheMap()) {
 		return 2;
 	}
@@ -328,13 +332,13 @@ int32_t Creature::getWalkCache(const Position &pos) const {
 	return 2;
 }
 
-void Creature::onAddTileItem(const Tile* tileItem, const Position &pos) {
+void Creature::onAddTileItem(std::shared_ptr<Tile> tileItem, const Position &pos) {
 	if (isMapLoaded && pos.z == getPosition().z) {
 		updateTileCache(tileItem, pos);
 	}
 }
 
-void Creature::onUpdateTileItem(const Tile* updateTile, const Position &pos, const Item*, const ItemType &oldType, const Item*, const ItemType &newType) {
+void Creature::onUpdateTileItem(std::shared_ptr<Tile> updateTile, const Position &pos, std::shared_ptr<Item>, const ItemType &oldType, std::shared_ptr<Item>, const ItemType &newType) {
 	if (!isMapLoaded) {
 		return;
 	}
@@ -346,7 +350,7 @@ void Creature::onUpdateTileItem(const Tile* updateTile, const Position &pos, con
 	}
 }
 
-void Creature::onRemoveTileItem(const Tile* updateTile, const Position &pos, const ItemType &iType, const Item*) {
+void Creature::onRemoveTileItem(std::shared_ptr<Tile> updateTile, const Position &pos, const ItemType &iType, std::shared_ptr<Item>) {
 	if (!isMapLoaded) {
 		return;
 	}
@@ -358,8 +362,8 @@ void Creature::onRemoveTileItem(const Tile* updateTile, const Position &pos, con
 	}
 }
 
-void Creature::onCreatureAppear(Creature* creature, bool isLogin) {
-	if (creature == this) {
+void Creature::onCreatureAppear(std::shared_ptr<Creature> creature, bool isLogin) {
+	if (creature == getCreature()) {
 		if (useCacheMap()) {
 			isMapLoaded = true;
 			updateMapCache();
@@ -375,9 +379,9 @@ void Creature::onCreatureAppear(Creature* creature, bool isLogin) {
 	}
 }
 
-void Creature::onRemoveCreature(Creature* creature, bool) {
+void Creature::onRemoveCreature(std::shared_ptr<Creature> creature, bool) {
 	onCreatureDisappear(creature, true);
-	if (creature != this && isMapLoaded) {
+	if (creature != getCreature() && isMapLoaded) {
 		if (creature->getPosition().z == getPosition().z) {
 			updateTileCache(creature->getTile(), creature->getPosition());
 		}
@@ -390,42 +394,41 @@ void Creature::onRemoveCreature(Creature* creature, bool) {
 	}
 }
 
-void Creature::onCreatureDisappear(const Creature* creature, bool isLogout) {
-	if (attackedCreature == creature) {
+void Creature::onCreatureDisappear(std::shared_ptr<Creature> creature, bool isLogout) {
+	if (getAttackedCreature() == creature) {
 		setAttackedCreature(nullptr);
 		onAttackedCreatureDisappear(isLogout);
 	}
 
-	if (followCreature == creature) {
+	if (getFollowCreature() == creature) {
 		setFollowCreature(nullptr);
 		onFollowCreatureDisappear(isLogout);
 	}
 }
 
 void Creature::onChangeZone(ZoneType_t zone) {
+	auto attackedCreature = getAttackedCreature();
 	if (attackedCreature && zone == ZONE_PROTECTION) {
 		onCreatureDisappear(attackedCreature, false);
 	}
 }
 
-void Creature::onChangeHazard(bool isHazard) { }
-
 void Creature::onAttackedCreatureChangeZone(ZoneType_t zone) {
 	if (zone == ZONE_PROTECTION) {
-		onCreatureDisappear(attackedCreature, false);
+		auto attackedCreature = getAttackedCreature();
+		if (attackedCreature) {
+			onCreatureDisappear(attackedCreature, false);
+		}
 	}
 }
 
-void Creature::checkSummonMove(const Position &newPos, bool teleportSummon) const {
+void Creature::checkSummonMove(const Position &newPos, bool teleportSummon) {
 	if (hasSummons()) {
-		std::vector<Creature*> despawnMonsterList;
-		for (Creature* creature : getSummons()) {
-			if (!creature) {
-				continue;
-			}
-
-			const Position &pos = creature->getPosition();
-			const Monster* monster = creature->getMonster();
+		std::vector<std::shared_ptr<Creature>> despawnMonsterList;
+		for (const auto &summon : getSummons()) {
+			const Position &pos = summon->getPosition();
+			std::shared_ptr<Monster> monster = summon->getMonster();
+			auto tile = getTile();
 			bool protectionZoneCheck = tile ? tile->hasFlag(TILESTATE_PROTECTIONZONE) : false;
 			// Check if any of our summons is out of range (+/- 0 floors or 15 tiles away)
 			bool checkSummonDist = Position::getDistanceZ(newPos, pos) > 0 || (std::max<int32_t>(Position::getDistanceX(newPos, pos), Position::getDistanceY(newPos, pos)) > 15);
@@ -433,27 +436,27 @@ void Creature::checkSummonMove(const Position &newPos, bool teleportSummon) cons
 			bool checkRemoveDist = Position::getDistanceZ(newPos, pos) > 2 || (std::max<int32_t>(Position::getDistanceX(newPos, pos), Position::getDistanceY(newPos, pos)) > 30);
 
 			if (monster && monster->isFamiliar() && checkSummonDist || teleportSummon && !protectionZoneCheck && checkSummonDist) {
-				auto creatureMaster = creature->getMaster();
+				auto creatureMaster = summon->getMaster();
 				if (!creatureMaster) {
 					continue;
 				}
 
-				if (Tile* masterTile = creatureMaster->getTile()) {
+				if (std::shared_ptr<Tile> masterTile = creatureMaster->getTile()) {
 					if (masterTile->hasFlag(TILESTATE_TELEPORT)) {
-						SPDLOG_WARN("[{}] cannot teleport summon, position has teleport. {}", __FUNCTION__, creatureMaster->getPosition().toString());
+						g_logger().warn("[{}] cannot teleport summon, position has teleport. {}", __FUNCTION__, creatureMaster->getPosition().toString());
 					} else {
-						g_game().internalTeleport(creature, creatureMaster->getPosition(), true);
+						g_game().internalTeleport(summon, creatureMaster->getPosition(), true);
 						continue;
 					}
 				}
 			}
 
 			if (monster && monster->isSummon() && !monster->isFamiliar() && !teleportSummon && checkRemoveDist) {
-				despawnMonsterList.push_back(creature);
+				despawnMonsterList.push_back(summon);
 			}
 		}
 
-		for (Creature* despawnCreature : despawnMonsterList) {
+		for (std::shared_ptr<Creature> despawnCreature : despawnMonsterList) {
 			if (!despawnMonsterList.empty()) {
 				g_game().removeCreature(despawnCreature, true);
 			}
@@ -461,8 +464,8 @@ void Creature::checkSummonMove(const Position &newPos, bool teleportSummon) cons
 	}
 }
 
-void Creature::onCreatureMove(Creature* creature, const Tile* newTile, const Position &newPos, const Tile* oldTile, const Position &oldPos, bool teleport) {
-	if (creature == this) {
+void Creature::onCreatureMove(std::shared_ptr<Creature> creature, std::shared_ptr<Tile> newTile, const Position &newPos, std::shared_ptr<Tile> oldTile, const Position &oldPos, bool teleport) {
+	if (creature == getCreature()) {
 		lastStep = OTSYS_TIME();
 		lastStepCost = 1;
 
@@ -484,18 +487,14 @@ void Creature::onCreatureMove(Creature* creature, const Tile* newTile, const Pos
 			handleLostSummon(configTeleportSummons);
 		}
 
-		if (Player* player = creature->getPlayer()) {
+		if (std::shared_ptr<Player> player = creature->getPlayer()) {
 			if (player->isExerciseTraining()) {
 				player->setTraining(false);
 			}
 		}
 
-		if (newTile->getZone() != oldTile->getZone()) {
-			onChangeZone(getZone());
-		}
-
-		if (newTile->isHazard() != oldTile->isHazard()) {
-			onChangeHazard(newTile->isHazard());
+		if (newTile->getZoneType() != oldTile->getZoneType()) {
+			onChangeZone(getZoneType());
 		}
 
 		// update map cache
@@ -513,7 +512,7 @@ void Creature::onCreatureMove(Creature* creature, const Tile* newTile, const Pos
 
 					// update 0
 					for (int32_t x = -maxWalkCacheWidth; x <= maxWalkCacheWidth; ++x) {
-						const Tile* cacheTile = g_game().map.getTile(static_cast<uint16_t>(myPos.getX() + x), static_cast<uint16_t>(myPos.getY() - maxWalkCacheHeight), myPos.z);
+						std::shared_ptr<Tile> cacheTile = g_game().map.getTile(static_cast<uint16_t>(myPos.getX() + x), static_cast<uint16_t>(myPos.getY() - maxWalkCacheHeight), myPos.z);
 						updateTileCache(cacheTile, x, -maxWalkCacheHeight);
 					}
 				} else if (oldPos.y < newPos.y) { // south
@@ -524,7 +523,7 @@ void Creature::onCreatureMove(Creature* creature, const Tile* newTile, const Pos
 
 					// update mapWalkHeight - 1
 					for (int32_t x = -maxWalkCacheWidth; x <= maxWalkCacheWidth; ++x) {
-						const Tile* cacheTile = g_game().map.getTile(static_cast<uint16_t>(myPos.getX() + x), static_cast<uint16_t>(myPos.getY() + maxWalkCacheHeight), myPos.z);
+						std::shared_ptr<Tile> cacheTile = g_game().map.getTile(static_cast<uint16_t>(myPos.getX() + x), static_cast<uint16_t>(myPos.getY() + maxWalkCacheHeight), myPos.z);
 						updateTileCache(cacheTile, x, maxWalkCacheHeight);
 					}
 				}
@@ -549,7 +548,7 @@ void Creature::onCreatureMove(Creature* creature, const Tile* newTile, const Pos
 
 					// update mapWalkWidth - 1
 					for (int32_t y = -maxWalkCacheHeight; y <= maxWalkCacheHeight; ++y) {
-						const Tile* cacheTile = g_game().map.getTile(myPos.x + maxWalkCacheWidth, static_cast<uint16_t>(myPos.y + y), myPos.z);
+						std::shared_ptr<Tile> cacheTile = g_game().map.getTile(myPos.x + maxWalkCacheWidth, static_cast<uint16_t>(myPos.y + y), myPos.z);
 						updateTileCache(cacheTile, maxWalkCacheWidth, y);
 					}
 				} else if (oldPos.x > newPos.x) { // west
@@ -572,7 +571,7 @@ void Creature::onCreatureMove(Creature* creature, const Tile* newTile, const Pos
 
 					// update 0
 					for (int32_t y = -maxWalkCacheHeight; y <= maxWalkCacheHeight; ++y) {
-						const Tile* cacheTile = g_game().map.getTile(myPos.x - maxWalkCacheWidth, static_cast<uint16_t>(myPos.y + y), myPos.z);
+						std::shared_ptr<Tile> cacheTile = g_game().map.getTile(myPos.x - maxWalkCacheWidth, static_cast<uint16_t>(myPos.y + y), myPos.z);
 						updateTileCache(cacheTile, -maxWalkCacheWidth, y);
 					}
 				}
@@ -594,10 +593,11 @@ void Creature::onCreatureMove(Creature* creature, const Tile* newTile, const Pos
 		}
 	}
 
-	if (followCreature && (creature == this || creature == followCreature)) {
+	auto followCreature = getFollowCreature();
+	if (followCreature && (creature == getCreature() || creature == followCreature)) {
 		if (hasFollowPath) {
 			isUpdatingPath = true;
-			g_dispatcher().addTask(createTask(std::bind(&Game::updateCreatureWalk, &g_game(), getID())));
+			g_dispatcher().addEvent(std::bind(&Game::updateCreatureWalk, &g_game(), getID()), "Game::updateCreatureWalk");
 		}
 
 		if (newPos.z != oldPos.z || !canSee(followCreature->getPosition())) {
@@ -605,17 +605,18 @@ void Creature::onCreatureMove(Creature* creature, const Tile* newTile, const Pos
 		}
 	}
 
-	if (creature == attackedCreature || (creature == this && attackedCreature)) {
+	auto attackedCreature = getAttackedCreature();
+	if (attackedCreature && (creature == attackedCreature || creature == getCreature())) {
 		if (newPos.z != oldPos.z || !canSee(attackedCreature->getPosition())) {
 			onCreatureDisappear(attackedCreature, false);
 		} else {
 			if (hasExtraSwing()) {
 				// our target is moving lets see if we can get in hit
-				g_dispatcher().addTask(createTask(std::bind(&Game::checkCreatureAttack, &g_game(), getID())));
+				g_dispatcher().addEvent(std::bind(&Game::checkCreatureAttack, &g_game(), getID()), "Game::checkCreatureAttack");
 			}
 
-			if (newTile->getZone() != oldTile->getZone()) {
-				onAttackedCreatureChangeZone(attackedCreature->getZone());
+			if (newTile->getZoneType() != oldTile->getZoneType()) {
+				onAttackedCreatureChangeZone(attackedCreature->getZoneType());
 			}
 		}
 	}
@@ -624,35 +625,35 @@ void Creature::onCreatureMove(Creature* creature, const Tile* newTile, const Pos
 void Creature::onDeath() {
 	bool lastHitUnjustified = false;
 	bool mostDamageUnjustified = false;
-	Creature* lastHitCreature = g_game().getCreatureByID(lastHitCreatureId);
-	Creature* lastHitCreatureMaster;
+	std::shared_ptr<Creature> lastHitCreature = g_game().getCreatureByID(lastHitCreatureId);
+	std::shared_ptr<Creature> lastHitCreatureMaster;
 	if (lastHitCreature) {
-		lastHitUnjustified = lastHitCreature->onKilledCreature(this, true);
+		lastHitUnjustified = lastHitCreature->onKilledCreature(static_self_cast<Creature>(), true);
 		lastHitCreatureMaster = lastHitCreature->getMaster();
 	} else {
 		lastHitCreatureMaster = nullptr;
 	}
 
-	Creature* mostDamageCreature = nullptr;
+	std::shared_ptr<Creature> mostDamageCreature = nullptr;
 
 	const int64_t timeNow = OTSYS_TIME();
 	const uint32_t inFightTicks = g_configManager().getNumber(PZ_LOCKED);
 	int32_t mostDamage = 0;
-	std::map<Creature*, uint64_t> experienceMap;
+	std::map<std::shared_ptr<Creature>, uint64_t> experienceMap;
 	for (const auto &it : damageMap) {
-		if (Creature* attacker = g_game().getCreatureByID(it.first)) {
+		if (auto attacker = g_game().getCreatureByID(it.first)) {
 			CountBlock_t cb = it.second;
 			if ((cb.total > mostDamage && (timeNow - cb.ticks <= inFightTicks))) {
 				mostDamage = cb.total;
 				mostDamageCreature = attacker;
 			}
 
-			if (attacker != this) {
+			if (attacker != getCreature()) {
 				uint64_t gainExp = getGainedExperience(attacker);
-				if (Player* attackerPlayer = attacker->getPlayer()) {
+				if (auto attackerPlayer = attacker->getPlayer()) {
 					attackerPlayer->removeAttacked(getPlayer());
 
-					Party* party = attackerPlayer->getParty();
+					auto party = attackerPlayer->getParty();
 					if (party && party->getLeader() && party->isSharedExperienceActive() && party->isSharedExperienceEnabled()) {
 						attacker = party->getLeader();
 						mostDamageCreature = attacker;
@@ -670,14 +671,14 @@ void Creature::onDeath() {
 	}
 
 	for (const auto &it : experienceMap) {
-		it.first->onGainExperience(it.second, this);
+		it.first->onGainExperience(it.second, getCreature());
 	}
 
 	if (mostDamageCreature) {
 		if (mostDamageCreature != lastHitCreature && mostDamageCreature != lastHitCreatureMaster) {
-			Creature* mostDamageCreatureMaster = mostDamageCreature->getMaster();
+			auto mostDamageCreatureMaster = mostDamageCreature->getMaster();
 			if (lastHitCreature != mostDamageCreatureMaster && (lastHitCreatureMaster == nullptr || mostDamageCreatureMaster != lastHitCreatureMaster)) {
-				mostDamageUnjustified = mostDamageCreature->onKilledCreature(this, false);
+				mostDamageUnjustified = mostDamageCreature->onKilledCreature(static_self_cast<Creature>(), false);
 			}
 		}
 	}
@@ -686,27 +687,27 @@ void Creature::onDeath() {
 	death(lastHitCreature);
 
 	if (droppedCorpse && !getPlayer()) {
-		g_game().removeCreature(this, false);
+		g_game().removeCreature(static_self_cast<Creature>(), false);
 	}
 
-	if (master) {
+	if (getMaster()) {
 		removeMaster();
 	}
 }
 
-bool Creature::dropCorpse(Creature* lastHitCreature, Creature* mostDamageCreature, bool lastHitUnjustified, bool mostDamageUnjustified) {
+bool Creature::dropCorpse(std::shared_ptr<Creature> lastHitCreature, std::shared_ptr<Creature> mostDamageCreature, bool lastHitUnjustified, bool mostDamageUnjustified) {
 	if (!lootDrop && getMonster()) {
-		if (master) {
+		if (getMaster()) {
 			// Scripting event onDeath
 			const CreatureEventList &deathEvents = getCreatureEvents(CREATURE_EVENT_DEATH);
-			for (CreatureEvent* deathEvent : deathEvents) {
-				deathEvent->executeOnDeath(this, nullptr, lastHitCreature, mostDamageCreature, lastHitUnjustified, mostDamageUnjustified);
+			for (const auto deathEventPtr : deathEvents) {
+				deathEventPtr->executeOnDeath(static_self_cast<Creature>(), nullptr, lastHitCreature, mostDamageCreature, lastHitUnjustified, mostDamageUnjustified);
 			}
 		}
 
 		g_game().addMagicEffect(getPosition(), CONST_ME_POFF);
 	} else {
-		Item* splash;
+		std::shared_ptr<Item> splash;
 		switch (getRace()) {
 			case RACE_VENOM:
 				splash = Item::CreateItem(ITEM_FULLSPLASH, FLUID_SLIME);
@@ -725,52 +726,45 @@ bool Creature::dropCorpse(Creature* lastHitCreature, Creature* mostDamageCreatur
 				break;
 		}
 
-		Tile* tile = getTile();
+		std::shared_ptr<Tile> tile = getTile();
 		if (tile && splash) {
 			g_game().internalAddItem(tile, splash, INDEX_WHEREEVER, FLAG_NOLIMIT);
 			splash->startDecaying();
 		}
 
-		Item* corpse = getCorpse(lastHitCreature, mostDamageCreature);
+		std::shared_ptr<Item> corpse = getCorpse(lastHitCreature, mostDamageCreature);
 		if (tile && corpse) {
 			g_game().internalAddItem(tile, corpse, INDEX_WHEREEVER, FLAG_NOLIMIT);
 			dropLoot(corpse->getContainer(), lastHitCreature);
 			corpse->startDecaying();
 			bool corpses = corpse->isRewardCorpse() || (corpse->getID() == ITEM_MALE_CORPSE || corpse->getID() == ITEM_FEMALE_CORPSE);
-			if (mostDamageCreature && mostDamageCreature->getPlayer() && !corpses) {
-				Player* player = mostDamageCreature->getPlayer();
-				if (g_configManager().getBoolean(AUTOBANK)) {
-					if (!corpse->getContainer()) {
-						return true;
+			const auto player = mostDamageCreature ? mostDamageCreature->getPlayer() : nullptr;
+			if (corpse->getContainer() && player && !corpses) {
+				auto monster = getMonster();
+				if (monster && !monster->isRewardBoss()) {
+					std::ostringstream lootMessage;
+					lootMessage << "Loot of " << getNameDescription() << ": " << corpse->getContainer()->getContentDescription(player->getProtocolVersion() < 1200);
+					auto suffix = corpse->getContainer()->getAttribute<std::string>(ItemAttribute_t::LOOTMESSAGE_SUFFIX);
+					if (!suffix.empty()) {
+						lootMessage << suffix;
 					}
-
-					int32_t money = 0;
-					for (Item* item : corpse->getContainer()->getItems()) {
-						if (uint32_t worth = item->getWorth(); worth > 0) {
-							money += worth;
-							g_game().internalRemoveItem(item);
-						}
-					}
-
-					if (money > 0) {
-						player->setBankBalance(player->getBankBalance() + money);
-						std::ostringstream ss;
-						ss << "Added " << money << " gold coins to your bank account.";
-						player->sendTextMessage(MESSAGE_STATUS, ss.str());
-					}
+					player->sendLootMessage(lootMessage.str());
 				}
 
-				if (g_configManager().getBoolean(AUTOLOOT)) {
+				if (player->checkAutoLoot()) {
 					int32_t pos = tile->getStackposOfItem(player, corpse);
-					g_dispatcher().addTask(createTask(std::bind(&Game::playerQuickLoot, &g_game(), mostDamageCreature->getID(), this->getPosition(), corpse->getID(), pos - 1, nullptr, false, true)));
+					g_dispatcher().addEvent(
+						std::bind(&Game::playerQuickLoot, &g_game(), mostDamageCreature->getID(), this->getPosition(), corpse->getID(), pos - 1, nullptr, false, true),
+						"Game::playerQuickLoot"
+					);
 				}
 			}
 		}
 
 		// Scripting event onDeath
-		for (CreatureEvent* deathEvent : getCreatureEvents(CREATURE_EVENT_DEATH)) {
-			if (deathEvent) {
-				deathEvent->executeOnDeath(this, corpse, lastHitCreature, mostDamageCreature, lastHitUnjustified, mostDamageUnjustified);
+		for (const auto deathEventPtr : getCreatureEvents(CREATURE_EVENT_DEATH)) {
+			if (deathEventPtr) {
+				deathEventPtr->executeOnDeath(static_self_cast<Creature>(), corpse, lastHitCreature, mostDamageCreature, lastHitUnjustified, mostDamageUnjustified);
 			}
 		}
 	}
@@ -786,7 +780,7 @@ bool Creature::hasBeenAttacked(uint32_t attackerId) {
 	return (OTSYS_TIME() - it->second.ticks) <= g_configManager().getNumber(PZ_LOCKED);
 }
 
-Item* Creature::getCorpse(Creature*, Creature*) {
+std::shared_ptr<Item> Creature::getCorpse(std::shared_ptr<Creature>, std::shared_ptr<Creature>) {
 	if (getLookCorpse() != 0) {
 		return Item::CreateItem(getLookCorpse());
 	}
@@ -803,10 +797,10 @@ void Creature::changeHealth(int32_t healthChange, bool sendHealthChange /* = tru
 	}
 
 	if (sendHealthChange && oldHealth != health) {
-		g_game().addCreatureHealth(this);
+		g_game().addCreatureHealth(static_self_cast<Creature>());
 	}
 	if (health <= 0) {
-		g_dispatcher().addTask(createTask(std::bind(&Game::executeDeath, &g_game(), getID())));
+		g_dispatcher().addEvent(std::bind(&Game::executeDeath, &g_game(), getID()), "Game::executeDeath");
 	}
 }
 
@@ -818,22 +812,22 @@ void Creature::changeMana(int32_t manaChange) {
 	}
 }
 
-void Creature::gainHealth(Creature* healer, int32_t healthGain) {
+void Creature::gainHealth(std::shared_ptr<Creature> healer, int32_t healthGain) {
 	changeHealth(healthGain);
 	if (healer) {
-		healer->onTargetCreatureGainHealth(this, healthGain);
+		healer->onTargetCreatureGainHealth(static_self_cast<Creature>(), healthGain);
 	}
 }
 
-void Creature::drainHealth(Creature* attacker, int32_t damage) {
+void Creature::drainHealth(std::shared_ptr<Creature> attacker, int32_t damage) {
 	changeHealth(-damage, false);
 
 	if (attacker) {
-		attacker->onAttackedCreatureDrainHealth(this, damage);
+		attacker->onAttackedCreatureDrainHealth(static_self_cast<Creature>(), damage);
 	}
 }
 
-void Creature::drainMana(Creature* attacker, int32_t manaLoss) {
+void Creature::drainMana(std::shared_ptr<Creature> attacker, int32_t manaLoss) {
 	onAttacked();
 	changeMana(-manaLoss);
 
@@ -844,13 +838,10 @@ void Creature::drainMana(Creature* attacker, int32_t manaLoss) {
 
 // Wheel of destiny - mitigation system for creature
 void Creature::mitigateDamage(const CombatType_t &combatType, BlockType_t &blockType, int32_t &damage) const {
-	if (combatType != COMBAT_MANADRAIN && combatType != COMBAT_LIFEDRAIN) {
-		// Increase mitigate damage
+	if (combatType != COMBAT_MANADRAIN && combatType != COMBAT_LIFEDRAIN && combatType != COMBAT_AGONYDAMAGE) { // Increase mitigate damage
 		auto originalDamage = damage;
 		damage -= (damage * getMitigation()) / 100.;
-		if (isDevMode()) {
-			spdlog::info("[mitigation] creature: {}, original damage: {}, mitigation damage: {}", getName(), originalDamage, damage);
-		}
+		g_logger().debug("[mitigation] creature: {}, original damage: {}, mitigation damage: {}", getName(), originalDamage, damage);
 
 		if (damage <= 0) {
 			damage = 0;
@@ -859,7 +850,7 @@ void Creature::mitigateDamage(const CombatType_t &combatType, BlockType_t &block
 	}
 }
 
-void Creature::applyAbsorbDamageModifications(const Creature* attacker, int32_t &damage, CombatType_t combatType) const {
+void Creature::applyAbsorbDamageModifications(std::shared_ptr<Creature> attacker, int32_t &damage, CombatType_t combatType) const {
 	if (combatType != COMBAT_HEALING && damage != 0) {
 		int32_t value = getAbsorbPercent(combatType);
 		if (value != 0) {
@@ -879,7 +870,7 @@ void Creature::applyAbsorbDamageModifications(const Creature* attacker, int32_t 
 	}
 }
 
-BlockType_t Creature::blockHit(Creature* attacker, CombatType_t combatType, int32_t &damage, bool checkDefense /* = false */, bool checkArmor /* = false */, bool /* field  = false */) {
+BlockType_t Creature::blockHit(std::shared_ptr<Creature> attacker, CombatType_t combatType, int32_t &damage, bool checkDefense /* = false */, bool checkArmor /* = false */, bool /* field  = false */) {
 	BlockType_t blockType = BLOCK_NONE;
 
 	// Apply skills 12.72 absorbs damage
@@ -926,7 +917,7 @@ BlockType_t Creature::blockHit(Creature* attacker, CombatType_t combatType, int3
 	}
 
 	if (attacker) {
-		attacker->onAttackedCreature(this);
+		attacker->onAttackedCreature(static_self_cast<Creature>());
 		attacker->onAttackedCreatureBlockHit(blockType);
 	}
 
@@ -936,33 +927,34 @@ BlockType_t Creature::blockHit(Creature* attacker, CombatType_t combatType, int3
 	return blockType;
 }
 
-bool Creature::setAttackedCreature(Creature* creature) {
+bool Creature::setAttackedCreature(std::shared_ptr<Creature> creature) {
 	if (creature) {
 		auto monster = getMonster();
+		auto tile = getTile();
 		if (monster && monster->isFamiliar() && tile && tile->hasFlag(TILESTATE_PROTECTIONZONE)) {
 			return false;
 		}
 
 		const Position &creaturePos = creature->getPosition();
 		if (creaturePos.z != getPosition().z || !canSee(creaturePos)) {
-			attackedCreature = nullptr;
+			m_attackedCreature.reset();
 			return false;
 		}
 
-		attackedCreature = creature;
-		onAttackedCreature(attackedCreature);
-		attackedCreature->onAttacked();
+		m_attackedCreature = creature;
+		onAttackedCreature(creature);
+		creature->onAttacked();
 	} else {
-		attackedCreature = nullptr;
+		m_attackedCreature.reset();
 	}
 
-	for (Creature* summon : summons) {
+	for (const auto &summon : m_summons) {
 		summon->setAttackedCreature(creature);
 	}
 	return true;
 }
 
-void Creature::getPathSearchParams(const Creature*, FindPathParams &fpp) const {
+void Creature::getPathSearchParams(std::shared_ptr<Creature>, FindPathParams &fpp) {
 	fpp.fullPathSearch = !hasFollowPath;
 	fpp.clearSight = true;
 	fpp.maxSearchDist = 12;
@@ -971,6 +963,7 @@ void Creature::getPathSearchParams(const Creature*, FindPathParams &fpp) const {
 }
 
 void Creature::goToFollowCreature() {
+	auto followCreature = getFollowCreature();
 	if (followCreature) {
 		if (isSummon() && !getMonster()->isFamiliar() && !canFollowMaster()) {
 			hasFollowPath = false;
@@ -979,7 +972,7 @@ void Creature::goToFollowCreature() {
 
 		FindPathParams fpp;
 		getPathSearchParams(followCreature, fpp);
-		Monster* monster = getMonster();
+		std::shared_ptr<Monster> monster = getMonster();
 		if (monster && !monster->getMaster() && (monster->isFleeing() || fpp.maxTargetDist > 1)) {
 			Direction dir = DIRECTION_NONE;
 
@@ -1020,25 +1013,29 @@ void Creature::goToFollowCreature() {
 	onFollowCreatureComplete(followCreature);
 }
 
-bool Creature::canFollowMaster() const {
+bool Creature::canFollowMaster() {
+	auto master = getMaster();
+	if (!master) {
+		return false;
+	}
 	auto tile = master->getTile();
 	return tile && !tile->hasFlag(TILESTATE_PROTECTIONZONE) && (canSeeInvisibility() || !master->isInvisible());
 }
 
-bool Creature::setFollowCreature(Creature* creature) {
+bool Creature::setFollowCreature(std::shared_ptr<Creature> creature) {
 	if (creature) {
-		if (followCreature == creature) {
+		if (getFollowCreature() == creature) {
 			return true;
 		}
 
 		if (hasCondition(CONDITION_FEARED)) {
-			followCreature = nullptr;
+			m_followCreature.reset();
 			return false;
 		}
 
 		const Position &creaturePos = creature->getPosition();
 		if (creaturePos.z != getPosition().z || !canSee(creaturePos)) {
-			followCreature = nullptr;
+			m_followCreature.reset();
 			return false;
 		}
 
@@ -1049,18 +1046,18 @@ bool Creature::setFollowCreature(Creature* creature) {
 
 		hasFollowPath = false;
 		forceUpdateFollowPath = false;
-		followCreature = creature;
+		m_followCreature = creature;
 		isUpdatingPath = true;
 	} else {
 		isUpdatingPath = false;
-		followCreature = nullptr;
+		m_followCreature.reset();
 	}
 
 	onFollowCreature(creature);
 	return true;
 }
 
-double Creature::getDamageRatio(Creature* attacker) const {
+double Creature::getDamageRatio(std::shared_ptr<Creature> attacker) const {
 	uint32_t totalDamage = 0;
 	uint32_t attackerDamage = 0;
 
@@ -1079,11 +1076,11 @@ double Creature::getDamageRatio(Creature* attacker) const {
 	return (static_cast<double>(attackerDamage) / totalDamage);
 }
 
-uint64_t Creature::getGainedExperience(Creature* attacker) const {
+uint64_t Creature::getGainedExperience(std::shared_ptr<Creature> attacker) const {
 	return std::floor(getDamageRatio(attacker) * getLostExperience());
 }
 
-void Creature::addDamagePoints(Creature* attacker, int32_t damagePoints) {
+void Creature::addDamagePoints(std::shared_ptr<Creature> attacker, int32_t damagePoints) {
 	if (damagePoints <= 0) {
 		return;
 	}
@@ -1121,7 +1118,8 @@ void Creature::onEndCondition(ConditionType_t) {
 }
 
 void Creature::onTickCondition(ConditionType_t type, bool &bRemove) {
-	const MagicField* field = tile ? tile->getFieldItem() : nullptr;
+	auto tile = getTile();
+	std::shared_ptr<MagicField> field = tile ? tile->getFieldItem() : nullptr;
 	if (!field) {
 		return;
 	}
@@ -1156,7 +1154,7 @@ void Creature::onTickCondition(ConditionType_t type, bool &bRemove) {
 	}
 }
 
-void Creature::onCombatRemoveCondition(Condition* condition) {
+void Creature::onCombatRemoveCondition(std::shared_ptr<Condition> condition) {
 	removeCondition(condition);
 }
 
@@ -1164,36 +1162,38 @@ void Creature::onAttacked() {
 	//
 }
 
-void Creature::onAttackedCreatureDrainHealth(Creature* target, int32_t points) {
-	target->addDamagePoints(this, points);
+void Creature::onAttackedCreatureDrainHealth(std::shared_ptr<Creature> target, int32_t points) {
+	target->addDamagePoints(static_self_cast<Creature>(), points);
 }
 
-void Creature::onAttackedCreatureKilled(Creature* target) {
-	if (target != this) {
-		uint64_t gainExp = target->getGainedExperience(this);
+void Creature::onAttackedCreatureKilled(std::shared_ptr<Creature> target) {
+	if (target != getCreature()) {
+		uint64_t gainExp = target->getGainedExperience(static_self_cast<Creature>());
 		onGainExperience(gainExp, target);
 	}
 }
 
-bool Creature::onKilledCreature(Creature* target, bool lastHit) {
+bool Creature::onKilledCreature(std::shared_ptr<Creature> target, bool lastHit) {
+	auto master = getMaster();
 	if (master) {
 		master->onKilledCreature(target, lastHit);
 	}
 
 	// scripting event - onKill
 	const CreatureEventList &killEvents = getCreatureEvents(CREATURE_EVENT_KILL);
-	for (CreatureEvent* killEvent : killEvents) {
-		killEvent->executeOnKill(this, target, lastHit);
+	for (const auto killEventPtr : killEvents) {
+		killEventPtr->executeOnKill(static_self_cast<Creature>(), target, lastHit);
 	}
 	return false;
 }
 
-void Creature::onGainExperience(uint64_t gainExp, Creature* target) {
+void Creature::onGainExperience(uint64_t gainExp, std::shared_ptr<Creature> target) {
+	auto master = getMaster();
 	if (gainExp == 0 || !master) {
 		return;
 	}
 
-	Monster* m = getMonster();
+	std::shared_ptr<Monster> m = getMonster();
 	if (!m->isFamiliar()) {
 		gainExp /= 2;
 	}
@@ -1201,8 +1201,7 @@ void Creature::onGainExperience(uint64_t gainExp, Creature* target) {
 	master->onGainExperience(gainExp, target);
 
 	if (!m->isFamiliar()) {
-		SpectatorHashSet spectators;
-		g_game().map.getSpectators(spectators, position, false, true);
+		auto spectators = Spectators().find<Player>(position);
 		if (spectators.empty()) {
 			return;
 		}
@@ -1212,68 +1211,63 @@ void Creature::onGainExperience(uint64_t gainExp, Creature* target) {
 		message.primary.color = TEXTCOLOR_WHITE_EXP;
 		message.primary.value = gainExp;
 
-		for (Creature* spectator : spectators) {
+		for (const auto &spectator : spectators) {
 			spectator->getPlayer()->sendTextMessage(message);
 		}
 	}
 }
 
-bool Creature::setMaster(Creature* newMaster, bool reloadCreature /* = false*/) {
+bool Creature::setMaster(std::shared_ptr<Creature> newMaster, bool reloadCreature /* = false*/) {
 	// Persists if this creature has ever been a summon
 	this->summoned = true;
+	auto oldMaster = getMaster();
 
-	if (!newMaster && !master) {
+	if (!newMaster && !oldMaster) {
 		return false;
 	}
+	const auto &self = getCreature();
 
 	// Reloading summon icon/knownCreature and reset informations (follow/dropLoot/skillLoss)
 	if (reloadCreature) {
 		setFollowCreature(nullptr);
 		setDropLoot(false);
 		setSkillLoss(false);
-		g_game().reloadCreature(this);
+		g_game().reloadCreature(self);
 	}
 	if (newMaster) {
-		incrementReferenceCounter();
-		newMaster->summons.push_back(this);
+		newMaster->m_summons.insert(self);
 	}
 
-	Creature* oldMaster = master;
-	master = newMaster;
+	m_master = newMaster;
 
 	if (oldMaster) {
-		auto summon = std::find(oldMaster->summons.begin(), oldMaster->summons.end(), this);
-		if (summon != oldMaster->summons.end()) {
-			oldMaster->summons.erase(summon);
-			decrementReferenceCounter();
-		}
+		oldMaster->m_summons.erase(self);
 	}
 	return true;
 }
 
-bool Creature::addCondition(Condition* condition) {
+bool Creature::addCondition(std::shared_ptr<Condition> condition) {
 	if (condition == nullptr) {
 		return false;
 	}
 
-	Condition* prevCond = getCondition(condition->getType(), condition->getId(), condition->getSubId());
+	std::shared_ptr<Condition> prevCond = getCondition(condition->getType(), condition->getId(), condition->getSubId());
 	if (prevCond) {
-		prevCond->addCondition(this, condition);
-		delete condition;
+		prevCond->addCondition(getCreature(), condition);
+
 		return true;
 	}
 
-	if (condition->startCondition(this)) {
+	if (condition->startCondition(getCreature())) {
 		conditions.push_back(condition);
 		onAddCondition(condition->getType());
 		return true;
 	}
 
-	delete condition;
 	return false;
 }
 
-bool Creature::addCombatCondition(Condition* condition) {
+bool Creature::addCombatCondition(std::shared_ptr<Condition> condition) {
 	// Caution: condition variable could be deleted after the call to addCondition
 	ConditionType_t type = condition->getType();
 
@@ -1288,7 +1282,7 @@ bool Creature::addCombatCondition(Condition* condition) {
 void Creature::removeCondition(ConditionType_t type) {
 	auto it = conditions.begin(), end = conditions.end();
 	while (it != end) {
-		Condition* condition = *it;
+		std::shared_ptr<Condition> condition = *it;
 		if (condition->getType() != type) {
 			++it;
 			continue;
@@ -1296,8 +1290,7 @@ void Creature::removeCondition(ConditionType_t type) {
 
 		it = conditions.erase(it);
 
-		condition->endCondition(this);
-		delete condition;
+		condition->endCondition(getCreature());
 
 		onEndCondition(type);
 	}
@@ -1306,7 +1299,7 @@ void Creature::removeCondition(ConditionType_t type) {
 void Creature::removeCondition(ConditionType_t conditionType, ConditionId_t conditionId, bool force /* = false*/) {
 	auto it = conditions.begin(), end = conditions.end();
 	while (it != end) {
-		Condition* condition = *it;
+		std::shared_ptr<Condition> condition = *it;
 		if (condition->getType() != conditionType || condition->getId() != conditionId) {
 			++it;
 			continue;
@@ -1315,34 +1308,37 @@ void Creature::removeCondition(ConditionType_t conditionType, ConditionId_t cond
 		if (!force && conditionType == CONDITION_PARALYZE) {
 			int32_t walkDelay = getWalkDelay();
 			if (walkDelay > 0) {
-				g_scheduler().addEvent(createSchedulerTask(walkDelay, std::bind(&Game::forceRemoveCondition, &g_game(), getID(), conditionType, conditionId)));
+				g_dispatcher().scheduleEvent(
+					walkDelay,
+					std::bind(&Game::forceRemoveCondition, &g_game(), getID(), conditionType, conditionId),
+					"Game::forceRemoveCondition"
+				);
 				return;
 			}
 		}
 
 		it = conditions.erase(it);
 
-		condition->endCondition(this);
-		delete condition;
+		condition->endCondition(getCreature());
 
 		onEndCondition(conditionType);
 	}
 }
 
 void Creature::removeCombatCondition(ConditionType_t type) {
-	std::vector<Condition*> removeConditions;
-	for (Condition* condition : conditions) {
+	std::vector<std::shared_ptr<Condition>> removeConditions;
+	for (const auto &condition : conditions) {
 		if (condition->getType() == type) {
 			removeConditions.push_back(condition);
 		}
 	}
 
-	for (Condition* condition : removeConditions) {
+	for (const auto &condition : removeConditions) {
 		onCombatRemoveCondition(condition);
 	}
 }
 
-void Creature::removeCondition(Condition* condition) {
+void Creature::removeCondition(std::shared_ptr<Condition> condition) {
 	auto it = std::find(conditions.begin(), conditions.end(), condition);
 	if (it == conditions.end()) {
 		return;
@@ -1350,13 +1346,12 @@ void Creature::removeCondition(Condition* condition) {
 
 	conditions.erase(it);
 
-	condition->endCondition(this);
+	condition->endCondition(getCreature());
 	onEndCondition(condition->getType());
-	delete condition;
 }
 
-Condition* Creature::getCondition(ConditionType_t type) const {
-	for (Condition* condition : conditions) {
+std::shared_ptr<Condition> Creature::getCondition(ConditionType_t type) const {
+	for (const auto &condition : conditions) {
 		if (condition->getType() == type) {
 			return condition;
 		}
@@ -1364,8 +1359,8 @@ Condition* Creature::getCondition(ConditionType_t type) const {
 	return nullptr;
 }
 
-Condition* Creature::getCondition(ConditionType_t type, ConditionId_t conditionId, uint32_t subId /* = 0*/) const {
-	for (Condition* condition : conditions) {
+std::shared_ptr<Condition> Creature::getCondition(ConditionType_t type, ConditionId_t conditionId, uint32_t subId /* = 0*/) const {
+	for (const auto &condition : conditions) {
 		if (condition->getType() == type && condition->getId() == conditionId && condition->getSubId() == subId) {
 			return condition;
 		}
@@ -1373,9 +1368,9 @@ Condition* Creature::getCondition(ConditionType_t type, ConditionId_t conditionI
 	return nullptr;
 }
 
-std::vector<Condition*> Creature::getConditionsByType(ConditionType_t type) const {
-	std::vector<Condition*> conditionsVec;
-	for (Condition* condition : conditions) {
+std::vector<std::shared_ptr<Condition>> Creature::getConditionsByType(ConditionType_t type) const {
+	std::vector<std::shared_ptr<Condition>> conditionsVec;
+	for (const auto &condition : conditions) {
 		if (condition->getType() == type) {
 			conditionsVec.push_back(condition);
 		}
@@ -1386,14 +1381,13 @@ std::vector<Condition*> Creature::getConditionsByType(ConditionType_t type) cons
 void Creature::executeConditions(uint32_t interval) {
 	auto it = conditions.begin(), end = conditions.end();
 	while (it != end) {
-		Condition* condition = *it;
-		if (!condition->executeCondition(this, interval)) {
+		std::shared_ptr<Condition> condition = *it;
+		if (!condition->executeCondition(getCreature(), interval)) {
 			ConditionType_t type = condition->getType();
 
 			it = conditions.erase(it);
 
-			condition->endCondition(this);
-			delete condition;
+			condition->endCondition(getCreature());
 
 			onEndCondition(type);
 		} else {
@@ -1408,7 +1402,7 @@ bool Creature::hasCondition(ConditionType_t type, uint32_t subId /* = 0*/) const
 	}
 
 	int64_t timeNow = OTSYS_TIME();
-	for (Condition* condition : conditions) {
+	for (const auto &condition : conditions) {
 		if (condition->getType() != type || condition->getSubId() != subId) {
 			continue;
 		}
@@ -1420,31 +1414,7 @@ bool Creature::hasCondition(ConditionType_t type, uint32_t subId /* = 0*/) const
 	return false;
 }
 
-bool Creature::isImmune(CombatType_t type) const {
-	return hasBitSet(static_cast<uint32_t>(type), getDamageImmunities());
-}
-
-bool Creature::isImmune(ConditionType_t type) const {
-	try {
-		return type == getConditionImmunities().at(type);
-	} catch (const std::out_of_range &exception) {
-		SPDLOG_ERROR("[{}] invalid index {}, error code: {}", __FUNCTION__, static_cast<uint8_t>(type), exception.what());
-	}
-
-	return false;
-}
-
-bool Creature::isSuppress(ConditionType_t type) const {
-	try {
-		return type == getConditionSuppressions().at(type);
-	} catch (const std::out_of_range &exception) {
-		SPDLOG_ERROR("[{}] invalid index {}, error code: {}", __FUNCTION__, static_cast<uint8_t>(type), exception.what());
-	}
-
-	return false;
-}
-
-int64_t Creature::getStepDuration(Direction dir) const {
+int64_t Creature::getStepDuration(Direction dir) {
 	int64_t stepDuration = getStepDuration();
 	if ((dir & DIRECTION_DIAGONAL_MASK) != 0) {
 		stepDuration *= 3;
@@ -1452,7 +1422,7 @@ int64_t Creature::getStepDuration(Direction dir) const {
 	return stepDuration;
 }
 
-int64_t Creature::getStepDuration() const {
+int64_t Creature::getStepDuration() {
 	if (isRemoved()) {
 		return 0;
 	}
@@ -1462,8 +1432,9 @@ int64_t Creature::getStepDuration() const {
 	calculatedStepSpeed = (stepSpeed > -Creature::speedB) ? calculatedStepSpeed : 1;
 
 	uint32_t groundSpeed = 150;
+	auto tile = getTile();
 	if (tile && tile->getGround()) {
-		Item* ground = tile->getGround();
+		std::shared_ptr<Item> ground = tile->getGround();
 		const ItemType &it = Item::items[ground->getID()];
 		groundSpeed = it.speed > 0 ? it.speed : groundSpeed;
 	}
@@ -1471,7 +1442,7 @@ int64_t Creature::getStepDuration() const {
 	double duration = std::floor(1000 * groundSpeed / calculatedStepSpeed);
 	int64_t stepDuration = std::ceil(duration / 50) * 50;
 
-	const Monster* monster = getMonster();
+	std::shared_ptr<Monster> monster = getMonster();
 	if (monster && monster->isTargetNearby() && !monster->isFleeing() && !monster->getMaster()) {
 		stepDuration *= 2;
 	}
@@ -1479,7 +1450,7 @@ int64_t Creature::getStepDuration() const {
 	return stepDuration;
 }
 
-int64_t Creature::getEventStepTicks(bool onlyDelay) const {
+int64_t Creature::getEventStepTicks(bool onlyDelay) {
 	int64_t ret = getWalkDelay();
 	if (ret <= 0) {
 		int64_t stepDuration = getStepDuration();
@@ -1522,15 +1493,15 @@ void Creature::setNormalCreatureLight() {
 }
 
 bool Creature::registerCreatureEvent(const std::string &name) {
-	CreatureEvent* event = g_creatureEvents().getEventByName(name);
+	const auto event = g_creatureEvents().getEventByName(name);
 	if (!event) {
 		return false;
 	}
 
 	CreatureEventType_t type = event->getEventType();
 	if (hasEventRegistered(type)) {
-		for (CreatureEvent* creatureEvent : eventsList) {
-			if (creatureEvent == event) {
+		for (const auto creatureEventPtr : eventsList) {
+			if (creatureEventPtr == event) {
 				return false;
 			}
 		}
@@ -1543,7 +1514,7 @@ bool Creature::registerCreatureEvent(const std::string &name) {
 }
 
 bool Creature::unregisterCreatureEvent(const std::string &name) {
-	const CreatureEvent* event = g_creatureEvents().getEventByName(name);
+	const auto event = g_creatureEvents().getEventByName(name);
 	if (!event) {
 		return false;
 	}
@@ -1557,7 +1528,7 @@ bool Creature::unregisterCreatureEvent(const std::string &name) {
 
 	auto it = eventsList.begin(), end = eventsList.end();
 	while (it != end) {
-		CreatureEvent* curEvent = *it;
+		const auto curEvent = *it;
 		if (curEvent == event) {
 			it = eventsList.erase(it);
 			continue;
@@ -1582,9 +1553,9 @@ CreatureEventList Creature::getCreatureEvents(CreatureEventType_t type) {
 		return tmpEventList;
 	}
 
-	for (CreatureEvent* creatureEvent : eventsList) {
-		if (creatureEvent->getEventType() == type) {
-			tmpEventList.push_back(creatureEvent);
+	for (const auto creatureEventPtr : eventsList) {
+		if (creatureEventPtr->getEventType() == type) {
+			tmpEventList.push_back(creatureEventPtr);
 		}
 	}
 
@@ -1667,17 +1638,17 @@ bool FrozenPathingConditionCall::operator()(const Position &startPos, const Posi
 }
 
 bool Creature::isInvisible() const {
-	return std::find_if(conditions.begin(), conditions.end(), [](const Condition* condition) {
+	return std::find_if(conditions.begin(), conditions.end(), [](const std::shared_ptr<Condition> condition) {
 			   return condition->getType() == CONDITION_INVISIBLE;
 		   })
 		!= conditions.end();
 }
 
-bool Creature::getPathTo(const Position &targetPos, std::forward_list<Direction> &dirList, const FindPathParams &fpp) const {
-	return g_game().map.getPathMatching(*this, dirList, FrozenPathingConditionCall(targetPos), fpp);
+bool Creature::getPathTo(const Position &targetPos, std::forward_list<Direction> &dirList, const FindPathParams &fpp) {
+	return g_game().map.getPathMatching(getCreature(), dirList, FrozenPathingConditionCall(targetPos), fpp);
 }
 
-bool Creature::getPathTo(const Position &targetPos, std::forward_list<Direction> &dirList, int32_t minTargetDist, int32_t maxTargetDist, bool fullPathSearch /*= true*/, bool clearSight /*= true*/, int32_t maxSearchDist /*= 7*/) const {
+bool Creature::getPathTo(const Position &targetPos, std::forward_list<Direction> &dirList, int32_t minTargetDist, int32_t maxTargetDist, bool fullPathSearch /*= true*/, bool clearSight /*= true*/, int32_t maxSearchDist /*= 7*/) {
 	FindPathParams fpp;
 	fpp.fullPathSearch = fullPathSearch;
 	fpp.maxSearchDist = maxSearchDist;
@@ -1687,7 +1658,7 @@ bool Creature::getPathTo(const Position &targetPos, std::forward_list<Direction>
 	return getPathTo(targetPos, dirList, fpp);
 }
 
-void Creature::turnToCreature(Creature* creature) {
+void Creature::turnToCreature(std::shared_ptr<Creature> creature) {
 	const Position &creaturePos = creature->getPosition();
 	const auto dx = Position::getOffsetX(position, creaturePos);
 	const auto dy = Position::getOffsetY(position, creaturePos);
@@ -1713,10 +1684,10 @@ void Creature::turnToCreature(Creature* creature) {
 			dir = DIRECTION_SOUTH;
 		}
 	}
-	g_game().internalCreatureTurn(this, dir);
+	g_game().internalCreatureTurn(static_self_cast<Creature>(), dir);
 }
 
-bool Creature::isLostSummon() const {
+bool Creature::isLostSummon() {
 	if (!isSummon()) {
 		return false;
 	}
@@ -1726,9 +1697,9 @@ bool Creature::isLostSummon() const {
 
 void Creature::handleLostSummon(bool teleportSummons) {
 	if (teleportSummons) {
-		g_game().internalTeleport(this, getMaster()->getPosition(), true);
+		g_game().internalTeleport(static_self_cast<Creature>(), getMaster()->getPosition(), true);
 	} else {
-		g_game().removeCreature(this, true);
+		g_game().removeCreature(static_self_cast<Creature>(), true);
 	}
 	g_game().addMagicEffect(getPosition(), CONST_ME_POFF);
 }
@@ -1737,7 +1708,7 @@ int32_t Creature::getReflectPercent(CombatType_t combatType, bool useCharges /*=
 	try {
 		return reflectPercent.at(combatTypeToIndex(combatType));
 	} catch (const std::out_of_range &e) {
-		spdlog::error("Index is out of range in getReflectPercent: {}", e.what());
+		g_logger().error("Index is out of range in getReflectPercent: {}", e.what());
 	}
 	return 0;
 }
@@ -1746,7 +1717,7 @@ void Creature::setReflectPercent(CombatType_t combatType, int32_t value) {
 	try {
 		reflectPercent.at(combatTypeToIndex(combatType)) = std::max(0, reflectPercent.at(combatTypeToIndex(combatType)) + value);
 	} catch (const std::out_of_range &e) {
-		spdlog::error("Index is out of range in setReflectPercent: {}", e.what());
+		g_logger().error("Index is out of range in setReflectPercent: {}", e.what());
 	}
 }
 
@@ -1754,7 +1725,7 @@ int32_t Creature::getReflectFlat(CombatType_t combatType, bool useCharges /* = f
 	try {
 		return reflectFlat.at(combatTypeToIndex(combatType));
 	} catch (const std::out_of_range &e) {
-		spdlog::error("Index is out of range in getReflectFlat: {}", e.what());
+		g_logger().error("Index is out of range in getReflectFlat: {}", e.what());
 	}
 	return 0;
 }
@@ -1763,7 +1734,7 @@ void Creature::setReflectFlat(CombatType_t combatType, int32_t value) {
 	try {
 		reflectFlat.at(combatTypeToIndex(combatType)) = std::max(0, reflectFlat.at(combatTypeToIndex(combatType)) + value);
 	} catch (const std::out_of_range &e) {
-		spdlog::error("Index is out of range in setReflectFlat: {}", e.what());
+		g_logger().error("Index is out of range in setReflectFlat: {}", e.what());
 	}
 }
 
@@ -1771,7 +1742,7 @@ int32_t Creature::getAbsorbFlat(CombatType_t combat) const {
 	try {
 		return absorbFlat.at(combatTypeToIndex(combat));
 	} catch (const std::out_of_range &e) {
-		spdlog::error("Index is out of range in getAbsorbFlat: {}", e.what());
+		g_logger().error("Index is out of range in getAbsorbFlat: {}", e.what());
 	}
 	return 0;
 }
@@ -1780,7 +1751,7 @@ void Creature::setAbsorbFlat(CombatType_t combat, int32_t value) {
 	try {
 		absorbFlat.at(combatTypeToIndex(combat)) += value;
 	} catch (const std::out_of_range &e) {
-		spdlog::error("Index is out of range in setAbsorbFlat: {}", e.what());
+		g_logger().error("Index is out of range in setAbsorbFlat: {}", e.what());
 	}
 }
 
@@ -1788,7 +1759,7 @@ int32_t Creature::getAbsorbPercent(CombatType_t combat) const {
 	try {
 		return absorbPercent.at(combatTypeToIndex(combat));
 	} catch (const std::out_of_range &e) {
-		spdlog::error("Index is out of range in getAbsorbPercent: {}", e.what());
+		g_logger().error("Index is out of range in getAbsorbPercent: {}", e.what());
 	}
 	return 0;
 }
@@ -1797,7 +1768,7 @@ void Creature::setAbsorbPercent(CombatType_t combat, int32_t value) {
 	try {
 		absorbPercent.at(combatTypeToIndex(combat)) += value;
 	} catch (const std::out_of_range &e) {
-		spdlog::error("Index is out of range in setAbsorbPercent: {}", e.what());
+		g_logger().error("Index is out of range in setAbsorbPercent: {}", e.what());
 	}
 }
 
@@ -1805,7 +1776,7 @@ int32_t Creature::getIncreasePercent(CombatType_t combat) const {
 	try {
 		return increasePercent.at(combatTypeToIndex(combat));
 	} catch (const std::out_of_range &e) {
-		spdlog::error("Index is out of range in getIncreasePercent: {}", e.what());
+		g_logger().error("Index is out of range in getIncreasePercent: {}", e.what());
 	}
 	return 0;
 }
@@ -1814,6 +1785,25 @@ void Creature::setIncreasePercent(CombatType_t combat, int32_t value) {
 	try {
 		increasePercent.at(combatTypeToIndex(combat)) += value;
 	} catch (const std::out_of_range &e) {
-		spdlog::error("Index is out of range in setIncreasePercent: {}", e.what());
+		g_logger().error("Index is out of range in setIncreasePercent: {}", e.what());
+	}
+}
+
+phmap::flat_hash_set<std::shared_ptr<Zone>> Creature::getZones() {
+	auto tile = getTile();
+	if (tile) {
+		return tile->getZones();
+	}
+	return {};
+}
+
+void Creature::iconChanged() {
+	auto tile = getTile();
+	if (!tile) {
+		return;
+	}
+
+	for (const auto &spectator : Spectators().find<Player>(tile->getPosition(), true)) {
+		spectator->getPlayer()->sendCreatureIcon(getCreature());
 	}
 }

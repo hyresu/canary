@@ -9,19 +9,19 @@
 
 #include "pch.hpp"
 
-#include "lua/global/globalevent.h"
-#include "utils/tools.h"
-#include "game/game.h"
-#include "game/scheduling/scheduler.h"
+#include "lua/global/globalevent.hpp"
+#include "utils/tools.hpp"
+#include "game/game.hpp"
+#include "game/scheduling/dispatcher.hpp"
 
 GlobalEvents::GlobalEvents() = default;
 GlobalEvents::~GlobalEvents() = default;
 
 void GlobalEvents::clear() {
 	// Stop events
-	g_scheduler().stopEvent(thinkEventId);
+	g_dispatcher().stopEvent(thinkEventId);
 	thinkEventId = 0;
-	g_scheduler().stopEvent(timerEventId);
+	g_dispatcher().stopEvent(timerEventId);
 	timerEventId = 0;
 
 	// Clear maps
@@ -30,32 +30,33 @@ void GlobalEvents::clear() {
 	timerMap.clear();
 }
 
-bool GlobalEvents::registerLuaEvent(GlobalEvent* event) {
-	GlobalEvent_ptr globalEvent { event };
+bool GlobalEvents::registerLuaEvent(const std::shared_ptr<GlobalEvent> globalEvent) {
 	if (globalEvent->getEventType() == GLOBALEVENT_TIMER) {
-		auto result = timerMap.emplace(globalEvent->getName(), std::move(*globalEvent));
+		auto result = timerMap.emplace(globalEvent->getName(), globalEvent);
 		if (result.second) {
 			if (timerEventId == 0) {
-				timerEventId = g_scheduler().addEvent(createSchedulerTask(SCHEDULER_MINTICKS, std::bind(&GlobalEvents::timer, this)));
+				timerEventId = g_dispatcher().scheduleEvent(SCHEDULER_MINTICKS, std::bind(&GlobalEvents::timer, this), "GlobalEvents::timer");
 			}
 			return true;
 		}
 	} else if (globalEvent->getEventType() != GLOBALEVENT_NONE) {
-		auto result = serverMap.emplace(globalEvent->getName(), std::move(*globalEvent));
+		auto result = serverMap.emplace(globalEvent->getName(), globalEvent);
 		if (result.second) {
 			return true;
 		}
 	} else { // think event
-		auto result = thinkMap.emplace(globalEvent->getName(), std::move(*globalEvent));
+		auto result = thinkMap.emplace(globalEvent->getName(), globalEvent);
 		if (result.second) {
 			if (thinkEventId == 0) {
-				thinkEventId = g_scheduler().addEvent(createSchedulerTask(SCHEDULER_MINTICKS, std::bind(&GlobalEvents::think, this)));
+				thinkEventId = g_dispatcher().scheduleEvent(
+					SCHEDULER_MINTICKS, [this] { think(); }, "GlobalEvents::think"
+				);
 			}
 			return true;
 		}
 	}
 
-	SPDLOG_WARN("Duplicate registered globalevent with name: {}", globalEvent->getName());
+	g_logger().warn("Duplicate registered globalevent with name: {}", globalEvent->getName());
 	return false;
 }
 
@@ -70,9 +71,9 @@ void GlobalEvents::timer() {
 
 	auto it = timerMap.begin();
 	while (it != timerMap.end()) {
-		GlobalEvent &globalEvent = it->second;
+		const auto globalEvent = it->second;
 
-		int64_t nextExecutionTime = globalEvent.getNextExecution() - now;
+		int64_t nextExecutionTime = globalEvent->getNextExecution() - now;
 		if (nextExecutionTime > 0) {
 			if (nextExecutionTime < nextScheduledTime) {
 				nextScheduledTime = nextExecutionTime;
@@ -82,7 +83,7 @@ void GlobalEvents::timer() {
 			continue;
 		}
 
-		if (!globalEvent.executeEvent()) {
+		if (!globalEvent->executeEvent()) {
 			it = timerMap.erase(it);
 			continue;
 		}
@@ -92,13 +93,13 @@ void GlobalEvents::timer() {
 			nextScheduledTime = nextExecutionTime;
 		}
 
-		globalEvent.setNextExecution(globalEvent.getNextExecution() + nextExecutionTime);
+		globalEvent->setNextExecution(globalEvent->getNextExecution() + nextExecutionTime);
 
 		++it;
 	}
 
 	if (nextScheduledTime != std::numeric_limits<int64_t>::max()) {
-		timerEventId = g_scheduler().addEvent(createSchedulerTask(std::max<int64_t>(1000, nextScheduledTime * 1000), std::bind(&GlobalEvents::timer, this)));
+		timerEventId = g_dispatcher().scheduleEvent(std::max<int64_t>(1000, nextScheduledTime * 1000), std::bind(&GlobalEvents::timer, this), __FUNCTION__);
 	}
 }
 
@@ -107,9 +108,9 @@ void GlobalEvents::think() {
 
 	int64_t nextScheduledTime = std::numeric_limits<int64_t>::max();
 	for (auto &it : thinkMap) {
-		GlobalEvent &globalEvent = it.second;
+		const auto globalEvent = it.second;
 
-		int64_t nextExecutionTime = globalEvent.getNextExecution() - now;
+		int64_t nextExecutionTime = globalEvent->getNextExecution() - now;
 		if (nextExecutionTime > 0) {
 			if (nextExecutionTime < nextScheduledTime) {
 				nextScheduledTime = nextExecutionTime;
@@ -117,31 +118,33 @@ void GlobalEvents::think() {
 			continue;
 		}
 
-		if (!globalEvent.executeEvent()) {
-			SPDLOG_ERROR("[GlobalEvents::think] - "
-						 "Failed to execute event: {}",
-						 globalEvent.getName());
+		g_logger().trace("[GlobalEvents::think] - Executing event: {}", globalEvent->getName());
+
+		if (!globalEvent->executeEvent()) {
+			g_logger().error("[GlobalEvents::think] - "
+							 "Failed to execute event: {}",
+							 globalEvent->getName());
 		}
 
-		nextExecutionTime = globalEvent.getInterval();
+		nextExecutionTime = globalEvent->getInterval();
 		if (nextExecutionTime < nextScheduledTime) {
 			nextScheduledTime = nextExecutionTime;
 		}
 
-		globalEvent.setNextExecution(globalEvent.getNextExecution() + nextExecutionTime);
+		globalEvent->setNextExecution(globalEvent->getNextExecution() + nextExecutionTime);
 	}
 
 	if (nextScheduledTime != std::numeric_limits<int64_t>::max()) {
 		auto delay = static_cast<uint32_t>(nextScheduledTime);
-		thinkEventId = g_scheduler().addEvent(createSchedulerTask(delay, std::bind(&GlobalEvents::think, this)));
+		thinkEventId = g_dispatcher().scheduleEvent(delay, std::bind(&GlobalEvents::think, this), "GlobalEvents::think");
 	}
 }
 
 void GlobalEvents::execute(GlobalEvent_t type) const {
 	for (const auto &it : serverMap) {
-		const GlobalEvent &globalEvent = it.second;
-		if (globalEvent.getEventType() == type) {
-			globalEvent.executeEvent();
+		const auto globalEvent = it.second;
+		if (globalEvent->getEventType() == type) {
+			globalEvent->executeEvent();
 		}
 	}
 }
@@ -159,7 +162,7 @@ GlobalEventMap GlobalEvents::getEventMap(GlobalEvent_t type) {
 		case GLOBALEVENT_RECORD: {
 			GlobalEventMap retMap;
 			for (const auto &it : serverMap) {
-				if (it.second.getEventType() == type) {
+				if (it.second->getEventType() == type) {
 					retMap.emplace(it.first, it.second);
 				}
 			}
@@ -188,7 +191,7 @@ std::string GlobalEvent::getScriptTypeName() const {
 		case GLOBALEVENT_ON_THINK:
 			return "onThink";
 		default:
-			SPDLOG_ERROR("[GlobalEvent::getScriptTypeName] - Invalid event type");
+			g_logger().error("[GlobalEvent::getScriptTypeName] - Invalid event type");
 			return std::string();
 	}
 }
@@ -196,9 +199,9 @@ std::string GlobalEvent::getScriptTypeName() const {
 bool GlobalEvent::executePeriodChange(LightState_t lightState, LightInfo lightInfo) const {
 	// onPeriodChange(lightState, lightTime)
 	if (!getScriptInterface()->reserveScriptEnv()) {
-		SPDLOG_ERROR("[GlobalEvent::executePeriodChange - {}] "
-					 "Call stack overflow. Too many lua script calls being nested.",
-					 getName());
+		g_logger().error("[GlobalEvent::executePeriodChange - {}] "
+						 "Call stack overflow. Too many lua script calls being nested.",
+						 getName());
 		return false;
 	}
 
@@ -216,9 +219,9 @@ bool GlobalEvent::executePeriodChange(LightState_t lightState, LightInfo lightIn
 bool GlobalEvent::executeRecord(uint32_t current, uint32_t old) {
 	// onRecord(current, old)
 	if (!getScriptInterface()->reserveScriptEnv()) {
-		SPDLOG_ERROR("[GlobalEvent::executeRecord - {}] "
-					 "Call stack overflow. Too many lua script calls being nested.",
-					 getName());
+		g_logger().error("[GlobalEvent::executeRecord - {}] "
+						 "Call stack overflow. Too many lua script calls being nested.",
+						 getName());
 		return false;
 	}
 
@@ -235,9 +238,9 @@ bool GlobalEvent::executeRecord(uint32_t current, uint32_t old) {
 
 bool GlobalEvent::executeEvent() const {
 	if (!getScriptInterface()->reserveScriptEnv()) {
-		SPDLOG_ERROR("[GlobalEvent::executeEvent - {}] "
-					 "Call stack overflow. Too many lua script calls being nested.",
-					 getName());
+		g_logger().error("[GlobalEvent::executeEvent - {}] "
+						 "Call stack overflow. Too many lua script calls being nested.",
+						 getName());
 		return false;
 	}
 

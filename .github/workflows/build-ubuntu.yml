@@ -5,7 +5,11 @@ on:
   workflow_dispatch:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'src/**'
   push:
+    paths:
+      - 'src/**'
     branches:
       - main
 
@@ -14,6 +18,15 @@ env:
   MAKEFLAGS: '-j 2'
 
 jobs:
+  cancel-runs:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Cancel Previous Runs
+      uses: styfle/cancel-workflow-action@0.9.1
+      with:
+        access_token: ${{ github.token }}
+
   job:
     if: ${{ github.event_name == 'push' || !github.event.pull_request.draft }}
     name: ${{ matrix.os }}-${{ matrix.buildtype }}
@@ -74,6 +87,7 @@ jobs:
         with:
           configurePreset: ${{ matrix.buildtype }}
           buildPreset: ${{ matrix.buildtype }}
+          configurePresetAdditionalArgs: "['-DBUILD_TESTS=ON']"
 
       - name: Create and Upload Artifact
         uses: actions/upload-artifact@main
@@ -81,3 +95,13 @@ jobs:
           name: canary-${{ matrix.os }}-${{ matrix.buildtype }}-${{ github.sha }}
           path: |
             ${{ github.workspace }}/build/${{ matrix.buildtype }}/bin/
+
+      - name: Run Unit Tests
+        run: |
+          cd ${{ github.workspace }}/build/${{ matrix.buildtype }}/tests/unit
+          ctest --verbose
+
+#      - name: Run Integration Tests
+#        run: |
+#          cd ${{ github.workspace }}/build/${{ matrix.buildtype }}/tests/integration
+#          ctest --verbose

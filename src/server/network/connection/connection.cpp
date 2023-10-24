@@ -9,38 +9,32 @@
 
 #include "pch.hpp"
 
-#include "server/network/connection/connection.h"
-#include "server/network/message/outputmessage.h"
-#include "server/network/protocol/protocol.h"
-#include "server/network/protocol/protocolgame.h"
-#include "game/scheduling/scheduler.h"
-#include "server/server.h"
+#include "server/network/connection/connection.hpp"
+#include "server/network/message/outputmessage.hpp"
+#include "server/network/protocol/protocol.hpp"
+#include "game/scheduling/dispatcher.hpp"
+#include "server/server.hpp"
 
 Connection_ptr ConnectionManager::createConnection(asio::io_service &io_service, ConstServicePort_ptr servicePort) {
-	std::lock_guard<std::mutex> lockClass(connectionManagerLock);
-
 	auto connection = std::make_shared<Connection>(io_service, servicePort);
-	connections.insert(connection);
+	connections.emplace(connection);
 	return connection;
 }
 
 void ConnectionManager::releaseConnection(const Connection_ptr &connection) {
-	std::lock_guard<std::mutex> lockClass(connectionManagerLock);
-
 	connections.erase(connection);
 }
 
 void ConnectionManager::closeAll() {
-	std::lock_guard<std::mutex> lockClass(connectionManagerLock);
-
-	for (const auto &connection : connections) {
+	connections.for_each([](const Connection_ptr &connection) {
 		try {
 			std::error_code error;
 			connection->socket.shutdown(asio::ip::tcp::socket::shutdown_both, error);
 		} catch (const std::system_error &systemError) {
-			SPDLOG_ERROR("[ConnectionManager::closeAll] - Failed to close connection, system error code {}", systemError.what());
+			g_logger().error("[ConnectionManager::closeAll] - Failed to close connection, system error code {}", systemError.what());
 		}
-	}
+	});
+
 	connections.clear();
 }
 
@@ -60,15 +54,14 @@ void Connection::close(bool force) {
 	ConnectionManager::getInstance().releaseConnection(shared_from_this());
 
 	std::lock_guard<std::recursive_mutex> lockClass(connectionLock);
+	ip = 0;
 	if (connectionState == CONNECTION_STATE_CLOSED) {
 		return;
 	}
 	connectionState = CONNECTION_STATE_CLOSED;
 
 	if (protocol) {
-		g_dispatcher().addTask(
-			createSchedulerTask(1000, std::bind_front(&Protocol::release, protocol))
-		);
+		g_dispatcher().addEvent(std::bind_front(&Protocol::release, protocol), "Protocol::release", 1000);
 	}
 
 	if (messageQueue.empty() || force) {
@@ -87,7 +80,7 @@ void Connection::closeSocket() {
 			socket.shutdown(asio::ip::tcp::socket::shutdown_both, error);
 			socket.close(error);
 		} catch (const std::system_error &e) {
-			SPDLOG_ERROR("[Connection::closeSocket] - error: {}", e.what());
+			g_logger().error("[Connection::closeSocket] - error: {}", e.what());
 		}
 	}
 }
@@ -95,7 +88,7 @@ void Connection::closeSocket() {
 void Connection::accept(Protocol_ptr protocolPtr) {
 	this->connectionState = CONNECTION_STATE_IDENTIFYING;
 	this->protocol = protocolPtr;
-	g_dispatcher().addTask(createSchedulerTask(1000, std::bind_front(&Protocol::onConnect, protocolPtr)));
+	g_dispatcher().addEvent(std::bind_front(&Protocol::onConnect, protocolPtr), "Protocol::onConnect", 1000);
 
 	// Call second accept for not duplicate code
 	accept(false);
@@ -115,7 +108,7 @@ void Connection::accept(bool toggleParseHeader /* = true */) {
 			asio::async_read(socket, asio::buffer(msg.getBuffer(), HEADER_LENGTH), std::bind(&Connection::parseProxyIdentification, shared_from_this(), std::placeholders::_1));
 		}
 	} catch (const std::system_error &e) {
-		SPDLOG_ERROR("[Connection::accept] - error: {}", e.what());
+		g_logger().error("[Connection::accept] - error: {}", e.what());
 		close(FORCE_CLOSE);
 	}
 }
@@ -151,7 +144,7 @@ void Connection::parseProxyIdentification(const std::error_code &error) {
 					// Read the remainder of proxy identification
 					asio::async_read(socket, asio::buffer(msg.getBuffer(), remainder), std::bind(&Connection::parseProxyIdentification, shared_from_this(), std::placeholders::_1));
 				} catch (const std::system_error &e) {
-					SPDLOG_ERROR("Connection::parseProxyIdentification] - error: {}", e.what());
+					g_logger().error("Connection::parseProxyIdentification] - error: {}", e.what());
 					close(FORCE_CLOSE);
 				}
 				return;
@@ -164,7 +157,7 @@ void Connection::parseProxyIdentification(const std::error_code &error) {
 		if (strncasecmp(charData, &serverName[2], remainder) == 0) {
 			connectionState = CONNECTION_STATE_OPEN;
 		} else {
-			SPDLOG_ERROR("Connection::parseProxyIdentification] Invalid Client Login! Server Name mismatch!");
+			g_logger().error("Connection::parseProxyIdentification] Invalid Client Login! Server Name mismatch!");
 			close(FORCE_CLOSE);
 			return;
 		}
@@ -186,7 +179,7 @@ void Connection::parseHeader(const std::error_code &error) {
 
 	uint32_t timePassed = std::max<uint32_t>(1, (time(nullptr) - timeConnected) + 1);
 	if ((++packetsSent / timePassed) > static_cast<uint32_t>(g_configManager().getNumber(MAX_PACKETS_PER_SECOND))) {
-		SPDLOG_WARN("{} disconnected for exceeding packet per second limit.", convertIPToString(getIP()));
+		g_logger().warn("{} disconnected for exceeding packet per second limit.", convertIPToString(getIP()));
 		close();
 		return;
 	}
@@ -210,7 +203,7 @@ void Connection::parseHeader(const std::error_code &error) {
 		msg.setLength(size + HEADER_LENGTH);
 		asio::async_read(socket, asio::buffer(msg.getBodyBuffer(), size), std::bind(&Connection::parsePacket, shared_from_this(), std::placeholders::_1));
 	} catch (const std::system_error &e) {
-		SPDLOG_ERROR("[Connection::parseHeader] - error: {}", e.what());
+		g_logger().error("[Connection::parseHeader] - error: {}", e.what());
 		close(FORCE_CLOSE);
 	}
 }
@@ -276,7 +269,7 @@ void Connection::parsePacket(const std::error_code &error) {
 			asio::async_read(socket, asio::buffer(msg.getBuffer(), HEADER_LENGTH), std::bind(&Connection::parseHeader, shared_from_this(), std::placeholders::_1));
 		}
 	} catch (const std::system_error &e) {
-		SPDLOG_ERROR("[Connection::parsePacket] - error: {}", e.what());
+		g_logger().error("[Connection::parsePacket] - error: {}", e.what());
 		close(FORCE_CLOSE);
 	}
 }
@@ -288,7 +281,7 @@ void Connection::resumeWork() {
 		// Wait to the next packet
 		asio::async_read(socket, asio::buffer(msg.getBuffer(), HEADER_LENGTH), std::bind(&Connection::parseHeader, shared_from_this(), std::placeholders::_1));
 	} catch (const std::system_error &e) {
-		SPDLOG_ERROR("[Connection::resumeWork] - error: {}", e.what());
+		g_logger().error("[Connection::resumeWork] - error: {}", e.what());
 		close(FORCE_CLOSE);
 	}
 }
@@ -306,7 +299,7 @@ void Connection::send(const OutputMessage_ptr &outputMessage) {
 		try {
 			asio::post(socket.get_executor(), std::bind(&Connection::internalWorker, shared_from_this()));
 		} catch (const std::system_error &e) {
-			SPDLOG_ERROR("[Connection::send] - error: {}", e.what());
+			g_logger().error("[Connection::send] - error: {}", e.what());
 			messageQueue.clear();
 			close(FORCE_CLOSE);
 		}
@@ -327,16 +320,17 @@ void Connection::internalWorker() {
 }
 
 uint32_t Connection::getIP() {
+	if (ip != 1) {
+		return ip;
+	}
+
 	std::lock_guard<std::recursive_mutex> lockClass(connectionLock);
 
 	// IP-address is expressed in network byte order
 	std::error_code error;
 	const asio::ip::tcp::endpoint endpoint = socket.remote_endpoint(error);
-	if (error) {
-		return 0;
-	}
-
-	return htonl(endpoint.address().to_v4().to_ulong());
+	ip = error ? 0 : htonl(endpoint.address().to_v4().to_uint());
+	return ip;
 }
 
 void Connection::internalSend(const OutputMessage_ptr &outputMessage) {
@@ -346,7 +340,7 @@ void Connection::internalSend(const OutputMessage_ptr &outputMessage) {
 
 		asio::async_write(socket, asio::buffer(outputMessage->getOutputBuffer(), outputMessage->getLength()), std::bind(&Connection::onWriteOperation, shared_from_this(), std::placeholders::_1));
 	} catch (const std::system_error &e) {
-		SPDLOG_ERROR("[Connection::internalSend] - error: {}", e.what());
+		g_logger().error("[Connection::internalSend] - error: {}", e.what());
 	}
 }
 

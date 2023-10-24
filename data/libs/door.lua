@@ -1,7 +1,7 @@
 -- Be careful, do not add quest door inside the level door table, this will lock the doors.
 
 -- ID of the keys. (Id 21392 is used only for dawnport quest)
-keysID = {2967, 2968, 2969, 2970, 2971, 2972, 2973, 21392}
+keysID = { 2967, 2968, 2969, 2970, 2971, 2972, 2973, 21392 }
 
 -- The lockedDoor is the doors with the description "It is locked". Use this (with no action) to keep a door permanently isoled.
 -- The closedDoor is the doors that are unlocked, when using them open normally.
@@ -158,6 +158,10 @@ CustomDoorTable = {
 	{ closedDoor = 33635, openDoor = 33637 },
 	{ closedDoor = 34221, openDoor = 34222 },
 	{ closedDoor = 34223, openDoor = 34224 },
+	{ closedDoor = 15890, openDoor = 15891 },
+	{ closedDoor = 15892, openDoor = 15893 },
+	{ closedDoor = 22502, openDoor = 22503 },
+	{ closedDoor = 22504, openDoor = 22505 },
 }
 
 -- These are the doors for missions, they need access from some mission (storage) to be able to enter. Put the storage value in the action id of the door and it will open only to the player who has the storage value.
@@ -268,8 +272,6 @@ LevelDoorTable = {
 	{ closedDoor = 11237, openDoor = 11238 },
 	{ closedDoor = 11246, openDoor = 11247 },
 	{ closedDoor = 12033, openDoor = 12034 },
-	{ closedDoor = 15890, openDoor = 15891 },
-	{ closedDoor = 15892, openDoor = 15893 },
 	{ closedDoor = 17565, openDoor = 17566 },
 	{ closedDoor = 17574, openDoor = 17575 },
 	{ closedDoor = 17705, openDoor = 17706 },
@@ -278,8 +280,6 @@ LevelDoorTable = {
 	{ closedDoor = 18007, openDoor = 18008 },
 	{ closedDoor = 20448, openDoor = 20449 },
 	{ closedDoor = 20457, openDoor = 20458 },
-	{ closedDoor = 22502, openDoor = 22503 },
-	{ closedDoor = 22504, openDoor = 22505 },
 	{ closedDoor = 30033, openDoor = 30035 },
 	{ closedDoor = 30034, openDoor = 30036 },
 	{ closedDoor = 30037, openDoor = 30039 },

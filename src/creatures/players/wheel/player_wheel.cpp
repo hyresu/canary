@@ -13,9 +13,9 @@
 
 #include "io/io_wheel.hpp"
 
-#include "game/game.h"
-#include "creatures/players/player.h"
-#include "creatures/combat/spells.h"
+#include "game/game.hpp"
+#include "creatures/players/player.hpp"
+#include "creatures/combat/spells.hpp"
 
 // To avoid conflict in other files that might use a function with the same name
 // Here are built-in helper functions
@@ -24,15 +24,11 @@ namespace {
 	bool checkSpellArea(const std::array<SpellType, 5> &spellsTable, const std::string &spellName, uint8_t stage) {
 		for (const auto &spellTable : spellsTable) {
 			auto size = std::ssize(spellTable.grade);
-			if (isDevMode()) {
-				spdlog::info("spell area stage {}, grade {}", stage, size);
-			}
+			g_logger().debug("spell area stage {}, grade {}", stage, size);
 			if (spellTable.name == spellName && stage < static_cast<uint8_t>(size)) {
 				const auto &spellData = spellTable.grade[stage];
 				if (spellData.increase.area) {
-					if (isDevMode()) {
-						spdlog::info("[{}] spell with name {}, and stage {} has increase area", __FUNCTION__, spellName, stage);
-					}
+					g_logger().debug("[{}] spell with name {}, and stage {} has increase area", __FUNCTION__, spellName, stage);
 
 					return true;
 				}
@@ -43,12 +39,10 @@ namespace {
 	}
 
 	template <typename SpellType>
-	int checkSpellAdditionalTarget(const std::array<SpellType, 5> &spellsTable, const std::string &spellName, uint8_t stage) {
+	int checkSpellAdditionalTarget(const std::array<SpellType, 5> &spellsTable, const std::string_view &spellName, uint8_t stage) {
 		for (const auto &spellTable : spellsTable) {
 			auto size = std::ssize(spellTable.grade);
-			if (isDevMode()) {
-				spdlog::info("spell target stage {}, grade {}", stage, size);
-			}
+			g_logger().debug("spell target stage {}, grade {}", stage, size);
 			if (spellTable.name == spellName && stage < static_cast<uint8_t>(size)) {
 				const auto &spellData = spellTable.grade[stage];
 				if (spellData.increase.aditionalTarget) {
@@ -61,12 +55,10 @@ namespace {
 	}
 
 	template <typename SpellType>
-	int checkSpellAdditionalDuration(const std::array<SpellType, 5> &spellsTable, const std::string &spellName, uint8_t stage) {
+	int checkSpellAdditionalDuration(const std::array<SpellType, 5> &spellsTable, const std::string_view &spellName, uint8_t stage) {
 		for (const auto &spellTable : spellsTable) {
 			auto size = std::ssize(spellTable.grade);
-			if (isDevMode()) {
-				spdlog::info("spell duration stage {}, grade {}", stage, size);
-			}
+			g_logger().debug("spell duration stage {}, grade {}", stage, size);
 			if (spellTable.name == spellName && stage < static_cast<uint8_t>(size)) {
 				const auto &spellData = spellTable.grade[stage];
 				if (spellData.increase.duration > 0) {
@@ -78,6 +70,19 @@ namespace {
 		return 0;
 	}
 
+	struct PromotionScroll {
+		uint16_t itemId;
+		std::string storageKey;
+		uint8_t extraPoints;
+	};
+
+	std::vector<PromotionScroll> WheelOfDestinyPromotionScrolls = {
+		{ 43946, "wheel.scroll.abridged", 3 },
+		{ 43947, "wheel.scroll.basic", 5 },
+		{ 43948, "wheel.scroll.revised", 9 },
+		{ 43949, "wheel.scroll.extended", 13 },
+		{ 43950, "wheel.scroll.advanced", 20 },
+	};
 } // namespace
 
 PlayerWheel::PlayerWheel(Player &initPlayer) :
@@ -91,9 +96,7 @@ bool PlayerWheel::canPlayerSelectPointOnSlot(WheelSlots_t slot, bool recursive) 
 	// Green quadrant
 	if (slot == WheelSlots_t::SLOT_GREEN_200) {
 		if (playerPoints < 375u) {
-			if (isDevMode()) {
-				spdlog::error("Player {} trying to manipulate byte on green slot 200 {}", m_player.getName(), fmt::underlying(slot));
-			}
+			g_logger().debug("Player {} trying to manipulate byte on green slot 200 {}", m_player.getName(), fmt::underlying(slot));
 			return false;
 		}
 		if (canSelectSlotFullOrPartial(WheelSlots_t::SLOT_GREEN_TOP_150)) {
@@ -104,9 +107,7 @@ bool PlayerWheel::canPlayerSelectPointOnSlot(WheelSlots_t slot, bool recursive) 
 		}
 	} else if (slot == WheelSlots_t::SLOT_GREEN_TOP_150) {
 		if (playerPoints < 225u) {
-			if (isDevMode()) {
-				spdlog::error("Player {} trying to manipulate byte to SLOT_GREEN_TOP_150: {}", m_player.getName(), fmt::underlying(slot));
-			}
+			g_logger().debug("Player {} trying to manipulate byte to SLOT_GREEN_TOP_150: {}", m_player.getName(), fmt::underlying(slot));
 			return false;
 		}
 		if (canSelectSlotFullOrPartial(WheelSlots_t::SLOT_GREEN_TOP_100)) {
@@ -120,9 +121,7 @@ bool PlayerWheel::canPlayerSelectPointOnSlot(WheelSlots_t slot, bool recursive) 
 		}
 	} else if (slot == WheelSlots_t::SLOT_GREEN_BOTTOM_150) {
 		if (playerPoints < 225u) {
-			if (isDevMode()) {
-				spdlog::error("Player {} trying to manipulate byte to SLOT_GREEN_BOTTOM_150: {}", m_player.getName(), fmt::underlying(slot));
-			}
+			g_logger().debug("Player {} trying to manipulate byte to SLOT_GREEN_BOTTOM_150: {}", m_player.getName(), fmt::underlying(slot));
 			return false;
 		}
 		if (canSelectSlotFullOrPartial(WheelSlots_t::SLOT_GREEN_MIDDLE_100)) {
@@ -136,9 +135,7 @@ bool PlayerWheel::canPlayerSelectPointOnSlot(WheelSlots_t slot, bool recursive) 
 		}
 	} else if (slot == WheelSlots_t::SLOT_GREEN_TOP_100) {
 		if (playerPoints < 125u) {
-			if (isDevMode()) {
-				spdlog::error("Player {} trying to manipulate byte to SLOT_GREEN_TOP_100: {}", m_player.getName(), fmt::underlying(slot));
-			}
+			g_logger().debug("Player {} trying to manipulate byte to SLOT_GREEN_TOP_100: {}", m_player.getName(), fmt::underlying(slot));
 			return false;
 		}
 		if (canSelectSlotFullOrPartial(WheelSlots_t::SLOT_RED_TOP_100)) {
@@ -155,9 +152,7 @@ bool PlayerWheel::canPlayerSelectPointOnSlot(WheelSlots_t slot, bool recursive) 
 		}
 	} else if (slot == WheelSlots_t::SLOT_GREEN_MIDDLE_100) {
 		if (playerPoints < 125u) {
-			if (isDevMode()) {
-				spdlog::error("Player {} trying to manipulate byte to SLOT_GREEN_MIDDLE_100: {}", m_player.getName(), fmt::underlying(slot));
-			}
+			g_logger().debug("Player {} trying to manipulate byte to SLOT_GREEN_MIDDLE_100: {}", m_player.getName(), fmt::underlying(slot));
 			return false;
 		}
 		if (canSelectSlotFullOrPartial(WheelSlots_t::SLOT_GREEN_TOP_100)) {
@@ -174,9 +169,7 @@ bool PlayerWheel::canPlayerSelectPointOnSlot(WheelSlots_t slot, bool recursive) 
 		}
 	} else if (slot == WheelSlots_t::SLOT_GREEN_BOTTOM_100) {
 		if (playerPoints < 125u) {
-			if (isDevMode()) {
-				spdlog::error("Player {} trying to manipulate byte to SLOT_GREEN_BOTTOM_100: {}", m_player.getName(), fmt::underlying(slot));
-			}
+			g_logger().debug("Player {} trying to manipulate byte to SLOT_GREEN_BOTTOM_100: {}", m_player.getName(), fmt::underlying(slot));
 			return false;
 		}
 		if (canSelectSlotFullOrPartial(WheelSlots_t::SLOT_GREEN_MIDDLE_100)) {
@@ -193,9 +186,7 @@ bool PlayerWheel::canPlayerSelectPointOnSlot(WheelSlots_t slot, bool recursive) 
 		}
 	} else if (slot == WheelSlots_t::SLOT_GREEN_TOP_75) {
 		if (playerPoints < 50u) {
-			if (isDevMode()) {
-				spdlog::error("Player {} trying to manipulate byte to SLOT_GREEN_TOP_75: {}", m_player.getName(), fmt::underlying(slot));
-			}
+			g_logger().debug("Player {} trying to manipulate byte to SLOT_GREEN_TOP_75: {}", m_player.getName(), fmt::underlying(slot));
 			return false;
 		}
 		if (canSelectSlotFullOrPartial(WheelSlots_t::SLOT_GREEN_50)) {
@@ -215,9 +206,7 @@ bool PlayerWheel::canPlayerSelectPointOnSlot(WheelSlots_t slot, bool recursive) 
 		}
 	} else if (slot == WheelSlots_t::SLOT_GREEN_BOTTOM_75) {
 		if (playerPoints < 50u) {
-			if (isDevMode()) {
-				spdlog::error("Player {} trying to manipulate byte to SLOT_GREEN_BOTTOM_75: {}", m_player.getName(), fmt::underlying(slot));
-			}
+			g_logger().debug("Player {} trying to manipulate byte to SLOT_GREEN_BOTTOM_75: {}", m_player.getName(), fmt::underlying(slot));
 			return false;
 		}
 		if (canSelectSlotFullOrPartial(WheelSlots_t::SLOT_GREEN_50)) {
@@ -696,6 +685,24 @@ int PlayerWheel::getSpellAdditionalDuration(const std::string &spellName) const 
 	return 0;
 }
 
+void PlayerWheel::addPromotionScrolls(NetworkMessage &msg) const {
+	uint16_t count = 0;
+	std::vector<uint16_t> unlockedScrolls;
+
+	for (const auto &scroll : WheelOfDestinyPromotionScrolls) {
+		auto storageValue = m_player.getStorageValueByName(scroll.storageKey);
+		if (storageValue > 0) {
+			count++;
+			unlockedScrolls.push_back(scroll.itemId);
+		}
+	}
+
+	msg.add<uint16_t>(count);
+	for (const auto &itemId : unlockedScrolls) {
+		msg.add<uint16_t>(itemId);
+	}
+}
+
 void PlayerWheel::sendOpenWheelWindow(NetworkMessage &msg, uint32_t ownerId) const {
 	if (m_player.client && m_player.client->oldProtocol) {
 		return;
@@ -712,12 +719,12 @@ void PlayerWheel::sendOpenWheelWindow(NetworkMessage &msg, uint32_t ownerId) con
 	msg.addByte(getOptions(ownerId)); // Options
 	msg.addByte(getPlayerVocationEnum()); // Vocation id
 
-	msg.add<uint16_t>(getWheelPoints()); // Points
-	msg.add<uint16_t>(0x00); // Extra points
+	msg.add<uint16_t>(getWheelPoints(false)); // Points (false param for not send extra points)
+	msg.add<uint16_t>(getExtraPoints()); // Extra points
 	for (uint8_t i = WheelSlots_t::SLOT_FIRST; i <= WheelSlots_t::SLOT_LAST; ++i) {
 		msg.add<uint16_t>(getPointsBySlotType(i));
 	}
-	msg.add<uint16_t>(0x00); // List size (U16)
+	addPromotionScrolls(msg);
 }
 
 void PlayerWheel::sendGiftOfLifeCooldown() const {
@@ -732,7 +739,7 @@ void PlayerWheel::sendGiftOfLifeCooldown() const {
 	msg.add<uint32_t>(getGiftOfCooldown());
 	msg.add<uint32_t>(getGiftOfLifeTotalCooldown());
 	// Checking if the cooldown if decreasing or it's stopped
-	if (m_player.getZone() != ZONE_PROTECTION && m_player.hasCondition(CONDITION_INFIGHT)) {
+	if (m_player.getZoneType() != ZONE_PROTECTION && m_player.hasCondition(CONDITION_INFIGHT)) {
 		msg.addByte(0x01);
 	} else {
 		msg.addByte(0x00);
@@ -743,9 +750,7 @@ void PlayerWheel::sendGiftOfLifeCooldown() const {
 
 bool PlayerWheel::checkSavePointsBySlotType(WheelSlots_t slotType, uint16_t points) {
 	if (points > 0 && !canPlayerSelectPointOnSlot(slotType, false)) {
-		if (isDevMode()) {
-			spdlog::warn("[{}] Failed to save points: {}, from slot {}", __FUNCTION__, points, fmt::underlying(slotType));
-		}
+		g_logger().debug("[{}] Failed to save points: {}, from slot {}", __FUNCTION__, points, fmt::underlying(slotType));
 		return false;
 	}
 
@@ -778,7 +783,8 @@ void PlayerWheel::saveSlotPointsOnPressSaveButton(NetworkMessage &msg) {
 		return;
 	}
 
-	auto startSaveTime = OTSYS_TIME();
+	Benchmark bm_saveSlot;
+
 	if (!canOpenWheel()) {
 		return;
 	}
@@ -791,8 +797,8 @@ void PlayerWheel::saveSlotPointsOnPressSaveButton(NetworkMessage &msg) {
 		auto maxPointsPerSlot = getMaxPointsPerSlot(static_cast<WheelSlots_t>(slot));
 		if (slotPoints > maxPointsPerSlot) {
 			m_player.sendTextMessage(MESSAGE_TRADE, "Something went wrong, try relogging and try again or contact and adminstrator");
-			spdlog::error("[{}] possible manipulation of client package using unauthorized program", __FUNCTION__);
-			spdlog::warn("Player: {}, error on slot: {}, total points: {}, max points: {}", m_player.getName(), slotPoints, slot, maxPointsPerSlot);
+			g_logger().error("[{}] possible manipulation of client package using unauthorized program", __FUNCTION__);
+			g_logger().warn("Player: {}, error on slot: {}, total points: {}, max points: {}", m_player.getName(), slotPoints, slot, maxPointsPerSlot);
 			return;
 		}
 
@@ -835,7 +841,7 @@ void PlayerWheel::saveSlotPointsOnPressSaveButton(NetworkMessage &msg) {
 	// If there is still data in the retry vector after the error loop, an error message is sent to the player.
 	if (!sortedTableRetry.empty()) {
 		m_player.sendTextMessage(MESSAGE_TRADE, "Something went wrong, try relogging and try again");
-		spdlog::error("[parseSaveWheel] Player '{}' tried to select a slot without the valid requirements", m_player.getName());
+		g_logger().error("[parseSaveWheel] Player '{}' tried to select a slot without the valid requirements", m_player.getName());
 	}
 
 	// Player's bonus data is loaded, initialized, and registered, and the function logs
@@ -843,9 +849,7 @@ void PlayerWheel::saveSlotPointsOnPressSaveButton(NetworkMessage &msg) {
 	initializePlayerData();
 	registerPlayerBonusData();
 
-	if (isDevMode()) {
-		spdlog::warn("Player: {} is saved the all slots info in: {} seconds", m_player.getName(), (OTSYS_TIME() - startSaveTime) / (1000.));
-	}
+	g_logger().debug("Player: {} is saved the all slots info in: {} milliseconds", m_player.getName(), bm_saveSlot.duration());
 }
 
 /*
@@ -868,7 +872,7 @@ void PlayerWheel::loadDBPlayerSlotPointsOnLogin() {
 		uint16_t points;
 		if (propStream.read<uint8_t>(slot) && propStream.read<uint16_t>(points)) {
 			setPointsBySlotType(slot, points);
-			spdlog::info("Player: {}, loaded points {} to slot {}", m_player.getName(), points, slot);
+			g_logger().debug("Player: {}, loaded points {} to slot {}", m_player.getName(), points, slot);
 		}
 	}
 }
@@ -876,15 +880,10 @@ void PlayerWheel::loadDBPlayerSlotPointsOnLogin() {
 bool PlayerWheel::saveDBPlayerSlotPointsOnLogout() const {
 	Database &db = Database::getInstance();
 	std::ostringstream query;
-	query << "DELETE FROM `player_wheeldata` WHERE `player_id` = " << m_player.getGUID();
-	if (!db.executeQuery(query.str())) {
-		return false;
-	}
-	query.str(std::string());
-
 	DBInsert insertWheelData("INSERT INTO `player_wheeldata` (`player_id`, `slot`) VALUES ");
+	insertWheelData.upsert({ "slot" });
 	PropWriteStream stream;
-	const auto &wheelSlots = getSlots();
+	const auto wheelSlots = getSlots();
 	for (uint8_t i = 1; i < wheelSlots.size(); ++i) {
 		auto value = wheelSlots[i];
 		if (value == 0) {
@@ -893,9 +892,7 @@ bool PlayerWheel::saveDBPlayerSlotPointsOnLogout() const {
 
 		stream.write<uint8_t>(i);
 		stream.write<uint16_t>(value);
-		if (isDevMode()) {
-			spdlog::info("Player: {}, saved points {} to slot {}", m_player.getName(), value, i);
-		}
+		g_logger().debug("Player: {}, saved points {} to slot {}", m_player.getName(), value, i);
 	}
 
 	size_t attributesSize;
@@ -903,26 +900,46 @@ bool PlayerWheel::saveDBPlayerSlotPointsOnLogout() const {
 	if (attributesSize > 0) {
 		query << m_player.getGUID() << ',' << db.escapeBlob(attributes, (uint32_t)attributesSize);
 		if (!insertWheelData.addRow(query)) {
-			if (isDevMode()) {
-				spdlog::error("[{}] failed to insert row data", __FUNCTION__);
-			}
+			g_logger().debug("[{}] failed to insert row data", __FUNCTION__);
 			return false;
 		}
 	}
 
 	if (!insertWheelData.execute()) {
-		if (isDevMode()) {
-			spdlog::error("[{}] failed to execute database insert", __FUNCTION__);
-		}
+		g_logger().debug("[{}] failed to execute database insert", __FUNCTION__);
 		return false;
 	}
 
 	return true;
 }
 
-uint16_t PlayerWheel::getWheelPoints() const {
+uint16_t PlayerWheel::getExtraPoints() const {
+	if (m_player.getLevel() < 51) {
+		g_logger().error("Character level must be above 50.");
+		return 0;
+	}
+
+	uint16_t totalBonus = 0;
+	for (const auto &scroll : WheelOfDestinyPromotionScrolls) {
+		auto storageValue = m_player.getStorageValueByName(scroll.storageKey);
+		if (storageValue > 0) {
+			totalBonus += scroll.extraPoints;
+		}
+	}
+
+	return totalBonus;
+}
+
+uint16_t PlayerWheel::getWheelPoints(bool includeExtraPoints /* = true*/) const {
 	uint32_t level = m_player.getLevel();
-	return std::max(0u, (level - m_minLevelToStartCountPoints)) * m_pointsPerLevel;
+	auto totalPoints = std::max(0u, (level - m_minLevelToStartCountPoints)) * m_pointsPerLevel;
+
+	if (includeExtraPoints) {
+		const auto extraPoints = getExtraPoints();
+		totalPoints += extraPoints;
+	}
+
+	return totalPoints;
 }
 
 bool PlayerWheel::canOpenWheel() const {
@@ -940,7 +957,7 @@ bool PlayerWheel::canOpenWheel() const {
 		return false;
 	}
 
-	if (m_player.getVocation()->getId() <= 4 && m_player.getStorageValue(STORAGEVALUE_PROMOTION) == -1) {
+	if (!m_player.isPromoted()) {
 		return false;
 	}
 
@@ -958,7 +975,7 @@ uint8_t PlayerWheel::getOptions(uint32_t ownerId) const {
 	}
 
 	// Check if is in the temple range (we assume the temple is within the range of 10 sqms)
-	if (m_player.getZone() == ZONE_PROTECTION) {
+	if (m_player.getZoneType() == ZONE_PROTECTION) {
 		for (auto [townid, town] : g_game().map.towns.getTowns()) {
 			if (Position::areInRange<1, 10>(town->getTemplePosition(), m_player.getPosition())) {
 				return 1;
@@ -986,14 +1003,10 @@ uint8_t PlayerWheel::getPlayerVocationEnum() const {
 
 bool PlayerWheel::canSelectSlotFullOrPartial(WheelSlots_t slot) const {
 	if (getPointsBySlotType(slot) == getMaxPointsPerSlot(slot)) {
-		if (isDevMode()) {
-			spdlog::info("[{}] points on slot {}, max points {}", __FUNCTION__, getPointsBySlotType(slot), getMaxPointsPerSlot(slot));
-		}
+		g_logger().debug("[{}] points on slot {}, max points {}", __FUNCTION__, getPointsBySlotType(slot), getMaxPointsPerSlot(slot));
 		return true;
 	}
-	if (isDevMode()) {
-		spdlog::error("[{}] slot {} is not full", __FUNCTION__, fmt::underlying(slot));
-	}
+	g_logger().debug("[{}] slot {} is not full", __FUNCTION__, fmt::underlying(slot));
 	return false;
 }
 
@@ -1018,7 +1031,7 @@ uint8_t PlayerWheel::getMaxPointsPerSlot(WheelSlots_t slot) const {
 		return 200u;
 	}
 
-	spdlog::error("[{}] player: {}, is trying to use unknown slot: {}", __FUNCTION__, m_player.getName(), fmt::underlying(slot));
+	g_logger().error("[{}] player: {}, is trying to use unknown slot: {}", __FUNCTION__, m_player.getName(), fmt::underlying(slot));
 	return 0u;
 }
 
@@ -1061,7 +1074,7 @@ void PlayerWheel::reloadPlayerData() {
 	m_player.sendStats();
 	m_player.sendBasicData();
 	sendGiftOfLifeCooldown();
-	g_game().reloadCreature(&m_player);
+	g_game().reloadCreature(m_player.getPlayer());
 }
 
 void PlayerWheel::registerPlayerBonusData() {
@@ -1133,6 +1146,14 @@ void PlayerWheel::registerPlayerBonusData() {
 		setSpellInstant("Divine Empowerment", false);
 	}
 
+	if (m_playerBonusData.stages.divineGrenade > 0) {
+		for (int i = 0; i < m_playerBonusData.stages.divineGrenade; ++i) {
+			setSpellInstant("Divine Grenade", true);
+		}
+	} else {
+		setSpellInstant("Divine Grenade", false);
+	}
+
 	if (m_playerBonusData.stages.drainBody > 0) {
 		for (int i = 0; i < m_playerBonusData.stages.drainBody; ++i) {
 			setSpellInstant("Drain Body", true);
@@ -1158,10 +1179,10 @@ void PlayerWheel::registerPlayerBonusData() {
 
 	if (m_playerBonusData.stages.executionersThrow > 0) {
 		for (int i = 0; i < m_playerBonusData.stages.executionersThrow; ++i) {
-			setSpellInstant("Executioner's Thow", true);
+			setSpellInstant("Executioner's Throw", true);
 		}
 	} else {
-		setSpellInstant("Executioner's Thow", false);
+		setSpellInstant("Executioner's Throw", false);
 	}
 
 	// Avatar
@@ -1197,13 +1218,13 @@ void PlayerWheel::registerPlayerBonusData() {
 		setSpellInstant("Avatar of Storm", false);
 	}
 
-	for (const auto &spell : m_playerBonusData.spells) {
+	for (const auto spell : m_playerBonusData.spells) {
 		upgradeSpell(spell);
 	}
 
 	if (m_player.getHealth() > m_player.getMaxHealth()) {
 		m_player.health = std::min<int32_t>(m_player.getMaxHealth(), m_player.healthMax);
-		g_game().addCreatureHealth(&m_player);
+		g_game().addCreatureHealth(m_player.getPlayer());
 	}
 
 	if (m_player.getMana() > m_player.getMaxMana()) {
@@ -1226,27 +1247,30 @@ void PlayerWheel::loadPlayerBonusData() {
 	loadRevelationPerks();
 	registerPlayerBonusData();
 
-	if (isDevMode()) {
-		spdlog::warn("Initializing print of WhelPlayerBonusData informations for player {}", m_player.getName());
-		printPlayerWheelMethodsBonusData(m_playerBonusData);
-		spdlog::warn("Print of player data finished!");
-	}
+	printPlayerWheelMethodsBonusData(m_playerBonusData);
 }
 
 void PlayerWheel::printPlayerWheelMethodsBonusData(const PlayerWheelMethodsBonusData &bonusData) const {
-	std::cout << "Stats:" << std::endl;
-	if (bonusData.stats.health > 0)
-		std::cout << "  health: " << bonusData.stats.health << std::endl;
-	if (bonusData.stats.mana > 0)
-		std::cout << "  mana: " << bonusData.stats.mana << std::endl;
-	if (bonusData.stats.capacity > 0)
-		std::cout << "  capacity: " << bonusData.stats.capacity << std::endl;
-	if (bonusData.stats.damage > 0)
-		std::cout << "  damage: " << bonusData.stats.damage << std::endl;
-	if (bonusData.stats.healing > 0)
-		std::cout << "  healing: " << bonusData.stats.healing << std::endl;
+	g_logger().debug("Initializing print of WhelPlayerBonusData informations for player {}", m_player.getName());
 
-	std::cout << "Resistance:" << std::endl;
+	g_logger().debug("Stats:");
+	if (bonusData.stats.health > 0) {
+		g_logger().debug("  health: {}", bonusData.stats.health);
+	}
+	if (bonusData.stats.mana > 0) {
+		g_logger().debug("  mana: {}", bonusData.stats.mana);
+	}
+	if (bonusData.stats.capacity > 0) {
+		g_logger().debug("  capacity: {}", bonusData.stats.capacity);
+	}
+	if (bonusData.stats.damage > 0) {
+		g_logger().debug("  damage: {}", bonusData.stats.damage);
+	}
+	if (bonusData.stats.healing > 0) {
+		g_logger().debug("  healing: {}", bonusData.stats.healing);
+	}
+
+	g_logger().debug("Resistance:");
 	for (size_t i = 0; i < bonusData.resistance.size(); ++i) {
 		auto combatValue = bonusData.resistance[i];
 		if (combatValue == 0) {
@@ -1257,82 +1281,112 @@ void PlayerWheel::printPlayerWheelMethodsBonusData(const PlayerWheelMethodsBonus
 		std::string combatTypeStr = getCombatName(combatType);
 		// Convert to percentage
 		float percentage = bonusData.resistance[i] / 100.0f;
-		std::cout << "  combatName: " << combatTypeStr << " value: " << bonusData.resistance[i] << " (" << percentage << "%)" << std::endl;
+		g_logger().debug("  combatName: {} value: {} ({}%)", combatTypeStr, bonusData.resistance[i], percentage);
 	}
 
-	std::cout << "Skills:" << std::endl;
-	if (bonusData.skills.melee > 0)
-		std::cout << "  melee: " << bonusData.skills.melee << std::endl;
-	if (bonusData.skills.distance > 0)
-		std::cout << "  distance: " << bonusData.skills.distance << std::endl;
-	if (bonusData.skills.magic > 0)
-		std::cout << "  magic: " << bonusData.skills.magic << std::endl;
+	g_logger().debug("Skills:");
+	if (bonusData.skills.melee > 0) {
+		g_logger().debug("  melee: {}", bonusData.skills.melee);
+	}
+	if (bonusData.skills.distance > 0) {
+		g_logger().debug("  distance: {}", bonusData.skills.distance);
+	}
+	if (bonusData.skills.magic > 0) {
+		g_logger().debug("  magic: {}", bonusData.skills.magic);
+	}
 
-	std::cout << "Leech:" << std::endl;
-	if (bonusData.leech.manaLeech > 0)
-		std::cout << "  manaLeech: " << bonusData.leech.manaLeech << std::endl;
-	if (bonusData.leech.lifeLeech > 0)
-		std::cout << "  lifeLeech: " << bonusData.leech.lifeLeech << std::endl;
+	g_logger().debug("Leech:");
+	if (bonusData.leech.manaLeech > 0) {
+		g_logger().debug("  manaLeech: {}", bonusData.leech.manaLeech);
+	}
+	if (bonusData.leech.lifeLeech > 0) {
+		g_logger().debug("  lifeLeech: {}", bonusData.leech.lifeLeech);
+	}
 
-	std::cout << "Instant:" << std::endl;
-	if (bonusData.instant.battleInstinct)
-		std::cout << "  battleInstinct: " << bonusData.instant.battleInstinct << std::endl;
-	if (bonusData.instant.battleHealing)
-		std::cout << "  battleHealing: " << bonusData.instant.battleHealing << std::endl;
-	if (bonusData.instant.positionalTatics)
-		std::cout << "  positionalTatics: " << bonusData.instant.positionalTatics << std::endl;
-	if (bonusData.instant.ballisticMastery)
-		std::cout << "  ballisticMastery: " << bonusData.instant.ballisticMastery << std::endl;
-	if (bonusData.instant.healingLink)
-		std::cout << "  healingLink: " << bonusData.instant.healingLink << std::endl;
-	if (bonusData.instant.runicMastery)
-		std::cout << "  runicMastery: " << bonusData.instant.runicMastery << std::endl;
-	if (bonusData.instant.focusMastery)
-		std::cout << "  focusMastery: " << bonusData.instant.focusMastery << std::endl;
+	g_logger().debug("Instant:");
+	if (bonusData.instant.battleInstinct) {
+		g_logger().debug("  battleInstinct: {}", bonusData.instant.battleInstinct);
+	}
+	if (bonusData.instant.battleHealing) {
+		g_logger().debug("  battleHealing: {}", bonusData.instant.battleHealing);
+	}
+	if (bonusData.instant.positionalTatics) {
+		g_logger().debug("  positionalTatics: {}", bonusData.instant.positionalTatics);
+	}
+	if (bonusData.instant.ballisticMastery) {
+		g_logger().debug("  ballisticMastery: {}", bonusData.instant.ballisticMastery);
+	}
+	if (bonusData.instant.healingLink) {
+		g_logger().debug("  healingLink: {}", bonusData.instant.healingLink);
+	}
+	if (bonusData.instant.runicMastery) {
+		g_logger().debug("  runicMastery: {}", bonusData.instant.runicMastery);
+	}
+	if (bonusData.instant.focusMastery) {
+		g_logger().debug("  focusMastery: {}", bonusData.instant.focusMastery);
+	}
 
-	std::cout << "Stages:" << std::endl;
-	if (bonusData.stages.combatMastery > 0)
-		std::cout << "  combatMastery: " << bonusData.stages.combatMastery << std::endl;
-	if (bonusData.stages.giftOfLife > 0)
-		std::cout << " giftOfLife: " << bonusData.stages.giftOfLife << std::endl;
-	if (bonusData.stages.divineEmpowerment > 0)
-		std::cout << " divineEmpowerment: " << bonusData.stages.divineEmpowerment << std::endl;
-	if (bonusData.stages.blessingOfTheGrove > 0)
-		std::cout << " blessingOfTheGrove: " << bonusData.stages.blessingOfTheGrove << std::endl;
-	if (bonusData.stages.drainBody > 0)
-		std::cout << " drainBody: " << bonusData.stages.drainBody << std::endl;
-	if (bonusData.stages.beamMastery > 0)
-		std::cout << " beamMastery: " << bonusData.stages.beamMastery << std::endl;
-	if (bonusData.stages.twinBurst > 0)
-		std::cout << " twinBurst: " << bonusData.stages.twinBurst << std::endl;
-	if (bonusData.stages.executionersThrow > 0)
-		std::cout << " executionersThrow: " << bonusData.stages.executionersThrow << std::endl;
+	g_logger().debug("Stages:");
+	if (bonusData.stages.combatMastery > 0) {
+		g_logger().debug("  combatMastery: {}", bonusData.stages.combatMastery);
+	}
+	if (bonusData.stages.giftOfLife > 0) {
+		g_logger().debug("  giftOfLife: {}", bonusData.stages.giftOfLife);
+	}
+	if (bonusData.stages.divineEmpowerment > 0) {
+		g_logger().debug("  divineEmpowerment: {}", bonusData.stages.divineEmpowerment);
+	}
+	if (bonusData.stages.divineGrenade > 0) {
+		g_logger().debug("  divineGrenade: {}", bonusData.stages.divineGrenade);
+	}
+	if (bonusData.stages.blessingOfTheGrove > 0) {
+		g_logger().debug("  blessingOfTheGrove: {}", bonusData.stages.blessingOfTheGrove);
+	}
+	if (bonusData.stages.drainBody > 0) {
+		g_logger().debug("  drainBody: {}", bonusData.stages.drainBody);
+	}
+	if (bonusData.stages.beamMastery > 0) {
+		g_logger().debug("  beamMastery: {}", bonusData.stages.beamMastery);
+	}
+	if (bonusData.stages.twinBurst > 0) {
+		g_logger().debug("  twinBurst: {}", bonusData.stages.twinBurst);
+	}
+	if (bonusData.stages.executionersThrow > 0) {
+		g_logger().debug("  executionersThrow: {}", bonusData.stages.executionersThrow);
+	}
 
-	std::cout << "Avatar:" << std::endl;
-	if (bonusData.avatar.light > 0)
-		std::cout << "  light: " << bonusData.avatar.light << std::endl;
-	if (bonusData.avatar.nature > 0)
-		std::cout << "  nature: " << bonusData.avatar.nature << std::endl;
-	if (bonusData.avatar.steel > 0)
-		std::cout << "  steel: " << bonusData.avatar.steel << std::endl;
-	if (bonusData.avatar.storm > 0)
-		std::cout << "  storm: " << bonusData.avatar.storm << std::endl;
+	g_logger().debug("Avatar:");
+	if (bonusData.avatar.light > 0) {
+		g_logger().debug("  light: {}", bonusData.avatar.light);
+	}
+	if (bonusData.avatar.nature > 0) {
+		g_logger().debug("  nature: {}", bonusData.avatar.nature);
+	}
+	if (bonusData.avatar.steel > 0) {
+		g_logger().debug("  steel: {}", bonusData.avatar.steel);
+	}
+	if (bonusData.avatar.storm > 0) {
+		g_logger().debug("  storm: {}", bonusData.avatar.storm);
+	}
 
-	if (bonusData.mitigation > 0)
-		std::cout << "mitigation: " << bonusData.mitigation << std::endl;
+	if (bonusData.mitigation > 0) {
+		g_logger().debug("mitigation: {}", bonusData.mitigation);
+	}
 
 	auto &spellsVector = bonusData.spells;
 	if (!spellsVector.empty()) {
-		std::cout << "Spells:" << std::endl;
-		for (const auto &spell : bonusData.spells) {
-			std::cout << "  " << spell << std::endl;
+		g_logger().debug("Spells:");
+		for (const auto spell : bonusData.spells) {
+			g_logger().debug("  {}", spell);
 		}
 	}
+
+	g_logger().debug("Print of player data finished!");
 }
 
 void PlayerWheel::loadDedicationAndConvictionPerks() {
-	using VocationBonusFunction = std::function<void(Player &, uint16_t, uint8_t, PlayerWheelMethodsBonusData &)>;
-	auto &wheelFunctions = g_game().getIOWheel()->getWheelMapFunctions();
+	using VocationBonusFunction = std::function<void(const std::shared_ptr<Player> &, uint16_t, uint8_t, PlayerWheelMethodsBonusData &)>;
+	auto wheelFunctions = g_game().getIOWheel()->getWheelMapFunctions();
 	auto vocationCipId = getPlayerVocationEnum();
 	if (vocationCipId < VOCATION_KNIGHT_CIP || vocationCipId > VOCATION_DRUID_CIP) {
 		return;
@@ -1347,18 +1401,16 @@ void PlayerWheel::loadDedicationAndConvictionPerks() {
 				internalData = it->second;
 			}
 			if (internalData == nullptr) {
-				spdlog::warn("[{}] 'internalData' cannot be null on slot type: {}, for player: {}", __FUNCTION__, i, m_player.getName());
+				g_logger().warn("[{}] 'internalData' cannot be null on slot type: {}, for player: {}", __FUNCTION__, i, m_player.getName());
 			} else {
-				internalData(m_player, points, vocationCipId, m_playerBonusData);
+				internalData(m_player.getPlayer(), points, vocationCipId, m_playerBonusData);
 			}
 		}
 	}
 }
 
 void PlayerWheel::addSpellToVector(const std::string &spellName) {
-	if (std::ranges::find(m_playerBonusData.spells.begin(), m_playerBonusData.spells.end(), spellName) == m_playerBonusData.spells.end()) {
-		m_playerBonusData.spells.emplace_back(spellName);
-	}
+	m_playerBonusData.spells.emplace_back(spellName);
 }
 
 void PlayerWheel::loadRevelationPerks() {
@@ -1392,6 +1444,7 @@ void PlayerWheel::loadRevelationPerks() {
 				addSpellToVector("Great Death Beam");
 			}
 		} else if (vocationEnum == Vocation_t::VOCATION_PALADIN_CIP) {
+			m_playerBonusData.stages.divineGrenade = redStageValue;
 			for (uint8_t i = 0; i < redStageValue; ++i) {
 				addSpellToVector("Divine Grenade");
 			}
@@ -1511,7 +1564,7 @@ WheelStageEnum_t PlayerWheel::getPlayerSliceStage(const std::string &color) cons
 			WheelSlots_t::SLOT_BLUE_200
 		};
 	} else {
-		spdlog::error("[{}] error to wheel player {} color: {}, does not match any check and was ignored", __FUNCTION__, color, m_player.getName());
+		g_logger().error("[{}] error to wheel player {} color: {}, does not match any check and was ignored", __FUNCTION__, color, m_player.getName());
 	}
 
 	int totalPoints = 0;
@@ -1569,13 +1622,13 @@ bool PlayerWheel::checkBattleInstinct() {
 				m_player.getPosition().y + offsetY,
 				m_player.getPosition().z
 			);
-			const Tile* tile = g_game().map.getTile(playerPositionOffSet);
+			std::shared_ptr<Tile> tile = g_game().map.getTile(playerPositionOffSet);
 			if (!tile) {
 				continue;
 			}
 
-			const Creature* creature = tile->getTopVisibleCreature(&m_player);
-			if (!creature || creature == &m_player || (creature->getMaster() && creature->getMaster()->getPlayer() == &m_player)) {
+			std::shared_ptr<Creature> creature = tile->getTopVisibleCreature(m_player.getPlayer());
+			if (!creature || creature == m_player.getPlayer() || (creature->getMaster() && creature->getMaster()->getPlayer() == m_player.getPlayer())) {
 				continue;
 			}
 
@@ -1617,13 +1670,13 @@ bool PlayerWheel::checkPositionalTatics() {
 				m_player.getPosition().y + offsetY,
 				m_player.getPosition().z
 			);
-			const Tile* tile = g_game().map.getTile(playerPositionOffSet);
+			std::shared_ptr<Tile> tile = g_game().map.getTile(playerPositionOffSet);
 			if (!tile) {
 				continue;
 			}
 
-			const Creature* creature = tile->getTopVisibleCreature(&m_player);
-			if (!creature || creature == &m_player || !creature->getMonster() || (creature->getMaster() && creature->getMaster()->getPlayer())) {
+			std::shared_ptr<Creature> creature = tile->getTopVisibleCreature(m_player.getPlayer());
+			if (!creature || creature == m_player.getPlayer() || !creature->getMonster() || (creature->getMaster() && creature->getMaster()->getPlayer())) {
 				continue;
 			}
 
@@ -1664,7 +1717,7 @@ bool PlayerWheel::checkBallisticMastery() {
 	uint16_t newHolyBonus = 2; // 2%
 	uint16_t newPhysicalBonus = 2; // 2%
 
-	const Item* item = m_player.getWeapon();
+	std::shared_ptr<Item> item = m_player.getWeapon();
 	if (item && item->getAmmoType() == AMMO_BOLT) {
 		if (getMajorStat(WheelMajor_t::CRITICAL_DMG) != newCritical) {
 			setMajorStat(WheelMajor_t::CRITICAL_DMG, newCritical);
@@ -1705,7 +1758,7 @@ bool PlayerWheel::checkCombatMastery() {
 	bool updateClient = false;
 	uint8_t stage = getStage(WheelStage_t::COMBAT_MASTERY);
 
-	const Item* item = m_player.getWeapon();
+	std::shared_ptr<Item> item = m_player.getWeapon();
 	if (item && item->getSlotPosition() & SLOTP_TWO_HAND) {
 		int32_t criticalSkill = 0;
 		if (stage >= 3) {
@@ -1748,11 +1801,28 @@ bool PlayerWheel::checkCombatMastery() {
 
 bool PlayerWheel::checkDivineEmpowerment() {
 	bool updateClient = false;
-	setOnThinkTimer(WheelOnThink_t::DIVINE_EMPOWERMENT, OTSYS_TIME() + 2000);
+	setOnThinkTimer(WheelOnThink_t::DIVINE_EMPOWERMENT, OTSYS_TIME() + 1000);
 
-	const Tile* tile = m_player.getTile();
-	if (tile && tile->getItemTypeCount(ITEM_DIVINE_EMPOWERMENT) > 0) {
-		int32_t damageBonus = 0;
+	const auto tile = m_player.getTile();
+	if (!tile) {
+		return updateClient;
+	}
+
+	const auto items = tile->getItemList();
+	if (!items) {
+		return updateClient;
+	}
+
+	int32_t damageBonus = 0;
+	bool isOwner = false;
+	for (const auto &item : *items) {
+		if (item->getID() == ITEM_DIVINE_EMPOWERMENT && item->getAttribute<uint32_t>(ItemAttribute_t::OWNER) == m_player.getID()) {
+			isOwner = true;
+			break;
+		}
+	}
+
+	if (isOwner) {
 		uint8_t stage = getStage(WheelStage_t::DIVINE_EMPOWERMENT);
 		if (stage >= 3) {
 			damageBonus = 12;
@@ -1761,14 +1831,32 @@ bool PlayerWheel::checkDivineEmpowerment() {
 		} else if (stage >= 1) {
 			damageBonus = 8;
 		}
-
-		if (damageBonus != getMajorStat(WheelMajor_t::DAMAGE)) {
-			setMajorStat(WheelMajor_t::DAMAGE, damageBonus);
-			updateClient = true;
-		}
+	}
+	if (damageBonus != getMajorStat(WheelMajor_t::DAMAGE)) {
+		setMajorStat(WheelMajor_t::DAMAGE, damageBonus);
+		updateClient = true;
 	}
 
 	return updateClient;
+}
+
+int32_t PlayerWheel::checkDivineGrenade(std::shared_ptr<Creature> target) const {
+	if (!target || target == m_player.getPlayer()) {
+		return 0;
+	}
+
+	int32_t damageBonus = 0;
+	uint8_t stage = getStage(WheelStage_t::DIVINE_GRENADE);
+
+	if (stage >= 3) {
+		damageBonus = 100;
+	} else if (stage >= 2) {
+		damageBonus = 60;
+	} else if (stage >= 1) {
+		damageBonus = 30;
+	}
+
+	return damageBonus;
 }
 
 void PlayerWheel::checkGiftOfLife() {
@@ -1778,7 +1866,7 @@ void PlayerWheel::checkGiftOfLife() {
 	giftDamage.primary.type = COMBAT_HEALING;
 	m_player.sendTextMessage(MESSAGE_EVENT_ADVANCE, "That was close! Fortunately, your were saved by the Gift of Life.");
 	g_game().addMagicEffect(m_player.getPosition(), CONST_ME_WATER_DROP);
-	g_game().combatChangeHealth(&m_player, &m_player, giftDamage);
+	g_game().combatChangeHealth(m_player.getPlayer(), m_player.getPlayer(), giftDamage);
 	// Condition cooldown reduction
 	uint16_t reductionTimer = 60000;
 	reduceAllSpellsCooldownTimer(reductionTimer);
@@ -1788,8 +1876,8 @@ void PlayerWheel::checkGiftOfLife() {
 	sendGiftOfLifeCooldown();
 }
 
-int32_t PlayerWheel::checkBlessingGroveHealingByTarget(const Creature* target) const {
-	if (!target || target == &m_player) {
+int32_t PlayerWheel::checkBlessingGroveHealingByTarget(std::shared_ptr<Creature> target) const {
+	if (!target || target == m_player.getPlayer()) {
 		return 0;
 	}
 
@@ -1817,8 +1905,8 @@ int32_t PlayerWheel::checkBlessingGroveHealingByTarget(const Creature* target) c
 	return healingBonus;
 }
 
-int32_t PlayerWheel::checkTwinBurstByTarget(const Creature* target) const {
-	if (!target || target == &m_player) {
+int32_t PlayerWheel::checkTwinBurstByTarget(std::shared_ptr<Creature> target) const {
+	if (!target || target == m_player.getPlayer()) {
 		return 0;
 	}
 
@@ -1838,8 +1926,8 @@ int32_t PlayerWheel::checkTwinBurstByTarget(const Creature* target) const {
 	return damageBonus;
 }
 
-int32_t PlayerWheel::checkExecutionersThrow(const Creature* target) const {
-	if (!target || target == &m_player) {
+int32_t PlayerWheel::checkExecutionersThrow(std::shared_ptr<Creature> target) const {
+	if (!target || target == m_player.getPlayer()) {
 		return 0;
 	}
 
@@ -1873,7 +1961,7 @@ int32_t PlayerWheel::checkBeamMasteryDamage() const {
 	return damageBoost;
 }
 
-int32_t PlayerWheel::checkDrainBodyLeech(const Creature* target, skills_t skill) const {
+int32_t PlayerWheel::checkDrainBodyLeech(std::shared_ptr<Creature> target, skills_t skill) const {
 	if (!target || !target->getMonster() || target->getWheelOfDestinyDrainBodyDebuff() == 0) {
 		return 0;
 	}
@@ -1978,7 +2066,7 @@ int32_t PlayerWheel::checkElementSensitiveReduction(CombatType_t type) const {
 void PlayerWheel::onThink(bool force /* = false*/) {
 	bool updateClient = false;
 	m_creaturesNearby = 0;
-	if (!m_player.hasCondition(CONDITION_INFIGHT) || m_player.getZone() == ZONE_PROTECTION || (!getInstant("Battle Instinct") && !getInstant("Positional Tatics") && !getInstant("Ballistic Mastery") && !getInstant("Gift of Life") && !getInstant("Combat Mastery") && !getInstant("Divine Empowerment") && getGiftOfCooldown() == 0)) {
+	if (!m_player.hasCondition(CONDITION_INFIGHT) || m_player.getZoneType() == ZONE_PROTECTION || (!getInstant("Battle Instinct") && !getInstant("Positional Tatics") && !getInstant("Ballistic Mastery") && !getInstant("Gift of Life") && !getInstant("Combat Mastery") && !getInstant("Divine Empowerment") && getGiftOfCooldown() == 0)) {
 		bool mustReset = false;
 		for (int i = 0; i < static_cast<int>(WheelMajor_t::TOTAL_COUNT); i++) {
 			if (getMajorStat(static_cast<WheelMajor_t>(i)) != 0) {
@@ -1993,9 +2081,11 @@ void PlayerWheel::onThink(bool force /* = false*/) {
 			}
 			m_player.sendSkills();
 			m_player.sendStats();
-			g_game().reloadCreature(&m_player);
+			g_game().reloadCreature(m_player.getPlayer());
 		}
-		return;
+		if (!force) {
+			return;
+		}
 	}
 	// Battle Instinct
 	if (getInstant("Battle Instinct") && (force || getOnThinkTimer(WheelOnThink_t::BATTLE_INSTINCT) < OTSYS_TIME()) && checkBattleInstinct()) {
@@ -2028,10 +2118,10 @@ void PlayerWheel::onThink(bool force /* = false*/) {
 }
 
 void PlayerWheel::reduceAllSpellsCooldownTimer(int32_t value) {
-	for (Condition* condition : m_player.getConditionsByType(CONDITION_SPELLCOOLDOWN)) {
+	for (const auto &condition : m_player.getConditionsByType(CONDITION_SPELLCOOLDOWN)) {
 		if (condition->getTicks() <= value) {
 			m_player.sendSpellCooldown(condition->getSubId(), 0);
-			condition->endCondition(&m_player);
+			condition->endCondition(m_player.getPlayer());
 		} else {
 			condition->setTicks(condition->getTicks() - value);
 			m_player.sendSpellCooldown(condition->getSubId(), condition->getTicks());
@@ -2040,7 +2130,7 @@ void PlayerWheel::reduceAllSpellsCooldownTimer(int32_t value) {
 }
 
 void PlayerWheel::resetUpgradedSpells() {
-	for (const auto &spell : m_learnedSpellsSelected) {
+	for (const auto spell : m_learnedSpellsSelected) {
 		if (m_player.hasLearnedInstantSpell(spell)) {
 			m_player.forgetInstantSpell(spell);
 		}
@@ -2081,8 +2171,8 @@ void PlayerWheel::downgradeSpell(const std::string &name) {
 	}
 }
 
-Spell* PlayerWheel::getCombatDataSpell(CombatDamage &damage) {
-	Spell* spell = nullptr;
+std::shared_ptr<Spell> PlayerWheel::getCombatDataSpell(CombatDamage &damage) {
+	std::shared_ptr<Spell> spell = nullptr;
 	damage.damageMultiplier += getMajorStatConditional("Divine Empowerment", WheelMajor_t::DAMAGE);
 	WheelSpellGrade_t spellGrade = WheelSpellGrade_t::NONE;
 	if (!(damage.instantSpellName).empty()) {
@@ -2122,7 +2212,7 @@ void PlayerWheel::setStage(WheelStage_t type, uint8_t value) {
 	try {
 		m_stages.at(enumValue) = value;
 	} catch (const std::out_of_range &e) {
-		SPDLOG_ERROR("[{}]. Type {} is out of range. Error message: {}", __FUNCTION__, enumValue, e.what());
+		g_logger().error("[{}]. Type {} is out of range. Error message: {}", __FUNCTION__, enumValue, e.what());
 	}
 }
 
@@ -2131,7 +2221,7 @@ void PlayerWheel::setOnThinkTimer(WheelOnThink_t type, int64_t time) {
 	try {
 		m_onThink.at(enumValue) = time;
 	} catch (const std::out_of_range &e) {
-		SPDLOG_ERROR("[{}]. Type {} is out of range, value {}. Error message: {}", __FUNCTION__, enumValue, time, e.what());
+		g_logger().error("[{}]. Type {} is out of range, value {}. Error message: {}", __FUNCTION__, enumValue, time, e.what());
 	}
 }
 
@@ -2140,7 +2230,7 @@ void PlayerWheel::setMajorStat(WheelMajor_t type, int32_t value) {
 	try {
 		m_majorStats.at(enumValue) = value;
 	} catch (const std::out_of_range &e) {
-		SPDLOG_ERROR("[{}]. Type {} is out of range, value {}. Error message: {}", __FUNCTION__, enumValue, value, e.what());
+		g_logger().error("[{}]. Type {} is out of range, value {}. Error message: {}", __FUNCTION__, enumValue, value, e.what());
 	}
 }
 
@@ -2149,7 +2239,7 @@ void PlayerWheel::setInstant(WheelInstant_t type, bool toggle) {
 	try {
 		m_instant.at(enumValue) = toggle;
 	} catch (const std::out_of_range &e) {
-		SPDLOG_ERROR("[{}]. Type {} is out of range. Error message: {}", __FUNCTION__, enumValue, e.what());
+		g_logger().error("[{}]. Type {} is out of range. Error message: {}", __FUNCTION__, enumValue, e.what());
 	}
 }
 
@@ -2158,7 +2248,7 @@ void PlayerWheel::setStat(WheelStat_t type, int32_t value) {
 	try {
 		m_stats.at(enumValue) = value;
 	} catch (const std::out_of_range &e) {
-		SPDLOG_ERROR("[{}]. Type {} is out of range, value {}. Error message: {}", __FUNCTION__, enumValue, value, e.what());
+		g_logger().error("[{}]. Type {} is out of range, value {}. Error message: {}", __FUNCTION__, enumValue, value, e.what());
 	}
 }
 
@@ -2166,7 +2256,7 @@ void PlayerWheel::setResistance(CombatType_t type, int32_t value) {
 	try {
 		m_resistance.at(combatTypeToIndex(type)) = value;
 	} catch (const std::out_of_range &e) {
-		SPDLOG_ERROR("[{}]. Type {} is out of range, value {}. Error message: {}", __FUNCTION__, combatTypeToIndex(type), value, e.what());
+		g_logger().error("[{}]. Type {} is out of range, value {}. Error message: {}", __FUNCTION__, combatTypeToIndex(type), value, e.what());
 	}
 }
 
@@ -2237,13 +2327,19 @@ void PlayerWheel::setSpellInstant(const std::string &name, bool value) {
 		} else {
 			setStage(WheelStage_t::DIVINE_EMPOWERMENT, 0);
 		}
+	} else if (name == "Divine Grenade") {
+		if (value) {
+			setStage(WheelStage_t::DIVINE_GRENADE, getStage(WheelStage_t::DIVINE_GRENADE) + 1);
+		} else {
+			setStage(WheelStage_t::DIVINE_GRENADE, 0);
+		}
 	} else if (name == "Twin Burst") {
 		if (value) {
 			setStage(WheelStage_t::TWIN_BURST, getStage(WheelStage_t::TWIN_BURST) + 1);
 		} else {
 			setStage(WheelStage_t::TWIN_BURST, 0);
 		}
-	} else if (name == "Executioner's Thow") {
+	} else if (name == "Executioner's Throw") {
 		if (value) {
 			setStage(WheelStage_t::EXECUTIONERS_THROW, getStage(WheelStage_t::EXECUTIONERS_THROW) + 1);
 		} else {
@@ -2288,8 +2384,54 @@ bool PlayerWheel::getInstant(WheelInstant_t type) const {
 	try {
 		return m_instant.at(enumValue);
 	} catch (const std::out_of_range &e) {
-		SPDLOG_ERROR("[{}]. Instant type {}. Error message: {}", __FUNCTION__, enumValue, e.what());
+		g_logger().error("[{}]. Instant type {}. Error message: {}", __FUNCTION__, enumValue, e.what());
 	}
+	return false;
+}
+
+uint8_t PlayerWheel::getStage(const std::string name) const {
+	if (name == "Battle Instinct") {
+		return PlayerWheel::getInstant(WheelInstant_t::BATTLE_INSTINCT);
+	} else if (name == "Battle Healing") {
+		return PlayerWheel::getInstant(WheelInstant_t::BATTLE_HEALING);
+	} else if (name == "Positional Tatics") {
+		return PlayerWheel::getInstant(WheelInstant_t::POSITIONAL_TATICS);
+	} else if (name == "Ballistic Mastery") {
+		return PlayerWheel::getInstant(WheelInstant_t::BALLISTIC_MASTERY);
+	} else if (name == "Healing Link") {
+		return PlayerWheel::getInstant(WheelInstant_t::HEALING_LINK);
+	} else if (name == "Runic Mastery") {
+		return PlayerWheel::getInstant(WheelInstant_t::RUNIC_MASTERY);
+	} else if (name == "Focus Mastery") {
+		return PlayerWheel::getInstant(WheelInstant_t::FOCUS_MASTERY);
+	} else if (name == "Beam Mastery") {
+		return PlayerWheel::getStage(WheelStage_t::BEAM_MASTERY);
+	} else if (name == "Combat Mastery") {
+		return PlayerWheel::getStage(WheelStage_t::COMBAT_MASTERY);
+	} else if (name == "Gift of Life") {
+		return PlayerWheel::getStage(WheelStage_t::GIFT_OF_LIFE);
+	} else if (name == "Blessing of the Grove") {
+		return PlayerWheel::getStage(WheelStage_t::BLESSING_OF_THE_GROVE);
+	} else if (name == "Drain Body") {
+		return PlayerWheel::getStage(WheelStage_t::DRAIN_BODY);
+	} else if (name == "Divine Empowerment") {
+		return PlayerWheel::getStage(WheelStage_t::DIVINE_EMPOWERMENT);
+	} else if (name == "Divine Grenade") {
+		return PlayerWheel::getStage(WheelStage_t::DIVINE_GRENADE);
+	} else if (name == "Twin Burst") {
+		return PlayerWheel::getStage(WheelStage_t::TWIN_BURST);
+	} else if (name == "Executioner's Throw") {
+		return PlayerWheel::getStage(WheelStage_t::EXECUTIONERS_THROW);
+	} else if (name == "Avatar of Light") {
+		return PlayerWheel::getStage(WheelStage_t::AVATAR_OF_LIGHT);
+	} else if (name == "Avatar of Nature") {
+		return PlayerWheel::getStage(WheelStage_t::AVATAR_OF_NATURE);
+	} else if (name == "Avatar of Steel") {
+		return PlayerWheel::getStage(WheelStage_t::AVATAR_OF_STEEL);
+	} else if (name == "Avatar of Storm") {
+		return PlayerWheel::getStage(WheelStage_t::AVATAR_OF_STORM);
+	}
+
 	return false;
 }
 
@@ -2298,7 +2440,7 @@ uint8_t PlayerWheel::getStage(WheelStage_t type) const {
 	try {
 		return m_stages.at(enumValue);
 	} catch (const std::out_of_range &e) {
-		SPDLOG_ERROR("[{}]. Instant type {}. Error message: {}", __FUNCTION__, enumValue, e.what());
+		g_logger().error("[{}]. Instant type {}. Error message: {}", __FUNCTION__, enumValue, e.what());
 	}
 	return 0;
 }
@@ -2308,7 +2450,7 @@ int32_t PlayerWheel::getMajorStat(WheelMajor_t type) const {
 	try {
 		return m_majorStats.at(enumValue);
 	} catch (const std::out_of_range &e) {
-		SPDLOG_ERROR("[{}]. Instant type {}. Error message: {}", __FUNCTION__, enumValue, e.what());
+		g_logger().error("[{}]. Instant type {}. Error message: {}", __FUNCTION__, enumValue, e.what());
 	}
 	return 0;
 }
@@ -2318,7 +2460,7 @@ int32_t PlayerWheel::getStat(WheelStat_t type) const {
 	try {
 		return m_stats.at(enumValue);
 	} catch (const std::out_of_range &e) {
-		SPDLOG_ERROR("[{}]. Instant type {}. Error message: {}", __FUNCTION__, enumValue, e.what());
+		g_logger().error("[{}]. Instant type {}. Error message: {}", __FUNCTION__, enumValue, e.what());
 	}
 	return 0;
 }
@@ -2328,7 +2470,7 @@ int32_t PlayerWheel::getResistance(CombatType_t type) const {
 	try {
 		return m_resistance.at(index);
 	} catch (const std::out_of_range &e) {
-		SPDLOG_ERROR("[{}]. Instant type {}. Error message: {}", __FUNCTION__, index, e.what());
+		g_logger().error("[{}]. Instant type {}. Error message: {}", __FUNCTION__, index, e.what());
 	}
 	return 0;
 }
@@ -2365,7 +2507,7 @@ int64_t PlayerWheel::getOnThinkTimer(WheelOnThink_t type) const {
 	try {
 		return m_onThink.at(enumValue);
 	} catch (const std::out_of_range &e) {
-		SPDLOG_ERROR("[{}]. Type {} is out of range. Error message: {}", __FUNCTION__, enumValue, e.what());
+		g_logger().error("[{}]. Type {} is out of range. Error message: {}", __FUNCTION__, enumValue, e.what());
 	}
 
 	return 0;
@@ -2398,9 +2540,11 @@ bool PlayerWheel::getInstant(const std::string name) const {
 		return PlayerWheel::getStage(WheelStage_t::DRAIN_BODY);
 	} else if (name == "Divine Empowerment") {
 		return PlayerWheel::getStage(WheelStage_t::DIVINE_EMPOWERMENT);
+	} else if (name == "Divine Grenade") {
+		return PlayerWheel::getStage(WheelStage_t::DIVINE_GRENADE);
 	} else if (name == "Twin Burst") {
 		return PlayerWheel::getStage(WheelStage_t::TWIN_BURST);
-	} else if (name == "Executioner's Thow") {
+	} else if (name == "Executioner's Throw") {
 		return PlayerWheel::getStage(WheelStage_t::EXECUTIONERS_THROW);
 	} else if (name == "Avatar of Light") {
 		return PlayerWheel::getStage(WheelStage_t::AVATAR_OF_LIGHT);
@@ -2474,7 +2618,7 @@ uint16_t PlayerWheel::getPointsBySlotType(uint8_t slotType) const {
 	try {
 		return m_wheelSlots.at(slotType);
 	} catch (const std::out_of_range &e) {
-		SPDLOG_ERROR("[{}]. Index {} is out of range, invalid slot type. Error message: {}", __FUNCTION__, slotType, e.what());
+		g_logger().error("[{}]. Index {} is out of range, invalid slot type. Error message: {}", __FUNCTION__, slotType, e.what());
 		return 0;
 	}
 }
@@ -2487,7 +2631,7 @@ void PlayerWheel::setPointsBySlotType(uint8_t slotType, uint16_t points) {
 	try {
 		m_wheelSlots.at(slotType) = points;
 	} catch (const std::out_of_range &e) {
-		SPDLOG_ERROR("[{}]. Index {} is out of range, invalid slot type. Error message: {}", __FUNCTION__, slotType, e.what());
+		g_logger().error("[{}]. Index {} is out of range, invalid slot type. Error message: {}", __FUNCTION__, slotType, e.what());
 	}
 }
 
@@ -2525,7 +2669,7 @@ void PlayerWheel::healIfBattleHealingActive() const {
 		CombatDamage damage;
 		damage.primary.value = checkBattleHealingAmount();
 		damage.primary.type = COMBAT_HEALING;
-		g_game().combatChangeHealth(&m_player, &m_player, damage);
+		g_game().combatChangeHealth(m_player.getPlayer(), m_player.getPlayer(), damage);
 	}
 }
 
@@ -2541,8 +2685,8 @@ void PlayerWheel::adjustDamageBasedOnResistanceAndSkill(int32_t &damage, CombatT
 float PlayerWheel::calculateMitigation() const {
 	int32_t skill = m_player.getSkillLevel(SKILL_SHIELD);
 	int32_t defenseValue = 0;
-	const Item* weapon = m_player.inventory[CONST_SLOT_LEFT];
-	const Item* shield = m_player.inventory[CONST_SLOT_RIGHT];
+	std::shared_ptr<Item> weapon = m_player.inventory[CONST_SLOT_LEFT];
+	std::shared_ptr<Item> shield = m_player.inventory[CONST_SLOT_RIGHT];
 
 	float fightFactor = 1.0f;
 	float shieldFactor = 1.0f;

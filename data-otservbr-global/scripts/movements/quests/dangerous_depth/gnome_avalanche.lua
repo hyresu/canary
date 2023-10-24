@@ -7,7 +7,7 @@ function spellCallback(param)
 	local tile = Tile(Position(param.pos))
 	if tile then
 		if tile:getTopCreature() then
-			tile:getTopCreature():addHealth( - math.random(1000, 1500))
+			tile:getTopCreature():addHealth(-math.random(1000, 1500))
 		end
 	end
 end
@@ -20,7 +20,7 @@ function onTargetTile(cid, pos)
 	spellCallback(param)
 end
 
-setCombatCallback(combat, CALLBACK_PARAM_TARGETTILE, "onTargetTile")
+combat:setCallback(CALLBACK_PARAM_TARGETTILE, "onTargetTile")
 
 local gnomeAvalanche = MoveEvent()
 
@@ -30,7 +30,7 @@ function gnomeAvalanche.onStepIn(creature, position, fromPosition, toPosition)
 	end
 
 	local monsterName = creature:getName():lower()
-	local var = {type = 1, number = creature:getId()}
+	local var = { type = 1, number = creature:getId() }
 	local r = math.random(1, 100)
 
 	if monsterName == "lost gnome" then

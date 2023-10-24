@@ -5,15 +5,14 @@ combatGrenade:setArea(createCombatArea(AREA_CIRCLE2X2))
 function onGetFormulaValues(player, level, maglevel)
 	local min = (level / 5) + (maglevel * 4)
 	local max = (level / 5) + (maglevel * 6)
+	local grade = player:upgradeSpellsWOD("Divine Grenade")
+
 	local multiplier = 1.0
-	local grade = player:upgradeSpellsWORD("Divine Grenade")
-	if grade >= WHEEL_GRADE_MAX then
-		multiplier = 2.0
-	elseif grade >= WHEEL_GRADE_UPGRADED then
-		multiplier = 1.6
-	elseif grade >= WHEEL_GRADE_REGULAR then
-		multiplier = 1.3
+	if grade ~= WHEEL_GRADE_NONE then
+		local multiplierByGrade = { 1.3, 1.6, 2.0 }
+		multiplier = multiplierByGrade[grade]
 	end
+
 	min = min * multiplier
 	max = max * multiplier
 	return -min, -max
@@ -62,21 +61,15 @@ function spell.onCastSpell(creature, var)
 	if not (creature and creature:isPlayer()) then
 		return false
 	end
-	local grade = creature:upgradeSpellsWORD("Divine Grenade")
+	local grade = creature:upgradeSpellsWOD("Divine Grenade")
 	if grade == WHEEL_GRADE_NONE then
 		creature:sendCancelMessage("You cannot cast this spell")
 		creature:getPosition():sendMagicEffect(CONST_ME_POFF)
 		return false
 	end
 
-	local cooldown = 0
-	if grade >= WHEEL_GRADE_MAX then
-		cooldown = 14
-	elseif grade >= WHEEL_GRADE_UPGRADED then
-		cooldown = 20
-	elseif grade >= WHEEL_GRADE_REGULAR then
-		cooldown = 26
-	end
+	local cooldownByGrade = { 26, 20, 14 }
+	local cooldown = cooldownByGrade[grade]
 
 	var.instantName = "Divine Grenade Cast"
 	if combatCast:execute(creature, var) then

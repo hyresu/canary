@@ -7,16 +7,32 @@
  * Website: https://docs.opentibiabr.com/
  */
 
-#ifndef SRC_IO__FUNCTIONS_IOLOGINDATASAVE_HPP_
-#define SRC_IO__FUNCTIONS_IOLOGINDATASAVE_HPP_
+#pragma once
 
-#include "io/iologindata.h"
+#include "io/iologindata.hpp"
 
 class IOLoginDataSave : public IOLoginData {
-	public:
-		static bool savePlayerForgeHistory(Player* player);
-		static bool saveRewardItems(Player* player);
-		static bool savePlayerBosstiary(const Player* player);
-};
+public:
+	static bool savePlayerFirst(std::shared_ptr<Player> player);
+	static bool savePlayerStash(std::shared_ptr<Player> player);
+	static bool savePlayerSpells(std::shared_ptr<Player> player);
+	static bool savePlayerKills(std::shared_ptr<Player> player);
+	static bool savePlayerBestiarySystem(std::shared_ptr<Player> player);
+	static bool savePlayerItem(std::shared_ptr<Player> player);
+	static bool savePlayerDepotItems(std::shared_ptr<Player> player);
+	static bool saveRewardItems(std::shared_ptr<Player> player);
+	static bool savePlayerInbox(std::shared_ptr<Player> player);
+	static bool savePlayerPreyClass(std::shared_ptr<Player> player);
+	static bool savePlayerTaskHuntingClass(std::shared_ptr<Player> player);
+	static bool savePlayerForgeHistory(std::shared_ptr<Player> player);
+	static bool savePlayerBosstiary(std::shared_ptr<Player> player);
+	static bool savePlayerStorage(std::shared_ptr<Player> palyer);
 
-#endif // SRC_IO__FUNCTIONS_IOLOGINDATASAVE_HPP_
+protected:
+	using ItemBlockList = std::list<std::pair<int32_t, std::shared_ptr<Item>>>;
+	using ItemDepotList = std::list<std::pair<int32_t, std::shared_ptr<Item>>>;
+	using ItemRewardList = std::list<std::pair<int32_t, std::shared_ptr<Item>>>;
+	using ItemInboxList = std::list<std::pair<int32_t, std::shared_ptr<Item>>>;
+
+	static bool saveItems(std::shared_ptr<Player> player, const ItemBlockList &itemList, DBInsert &query_insert, PropWriteStream &stream);
+};

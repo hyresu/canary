@@ -11,6 +11,7 @@ function canChain(creature, target)
 	end
 	return false
 end
+
 combat:setCallback(CALLBACK_PARAM_CHAINPICKER, "canChain")
 
 function getChainValue(creature)
@@ -21,6 +22,7 @@ function getChainValue(creature)
 	end
 	return targets, 6, false
 end
+
 combat:setCallback(CALLBACK_PARAM_CHAINVALUE, "getChainValue")
 
 function onChain(creature, target)
@@ -30,11 +32,12 @@ function onChain(creature, target)
 		duration = duration + (player:getWheelSpellAdditionalDuration("Chivalrous Challenge") * 1000)
 	end
 	if target and target:isMonster() then
-		doChallengeCreature(player, closestMonster)
+		doChallengeCreature(player, target:getMonster(), 12000)
 		target:changeTargetDistance(1, duration)
 	end
 	return true
 end
+
 combat:setCallback(CALLBACK_PARAM_TARGETCREATURE, "onChain")
 
 local spell = Spell("instant")

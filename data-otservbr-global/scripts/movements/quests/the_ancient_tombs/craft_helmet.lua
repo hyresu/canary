@@ -1,4 +1,4 @@
-local helmetIds = {3222, 3223, 3224, 3225, 3226, 3227, 3228}
+local helmetIds = { 3222, 3223, 3224, 3225, 3226, 3227, 3228 }
 
 local craftHelmet = MoveEvent()
 
@@ -16,7 +16,7 @@ function craftHelmet.onAddItem(moveitem, tileitem, position)
 		return true
 	end
 
-	if not isInArray(helmetIds, moveitem.itemid) then
+	if not table.contains(helmetIds, moveitem.itemid) then
 		return true
 	end
 

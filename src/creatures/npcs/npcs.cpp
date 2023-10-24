@@ -10,13 +10,12 @@
 #include "pch.hpp"
 
 #include "declarations.hpp"
-#include "creatures/combat/combat.h"
-#include "creatures/creature.h"
+#include "creatures/combat/combat.hpp"
 #include "lua/scripts/lua_environment.hpp"
-#include "creatures/combat/spells.h"
-#include "creatures/npcs/npcs.h"
-#include "lua/scripts/scripts.h"
-#include "game/game.h"
+#include "creatures/combat/spells.hpp"
+#include "creatures/npcs/npcs.hpp"
+#include "lua/scripts/scripts.hpp"
+#include "game/game.hpp"
 
 bool NpcType::canSpawn(const Position &pos) {
 	bool canSpawn = true;
@@ -33,7 +32,7 @@ bool NpcType::canSpawn(const Position &pos) {
 bool NpcType::loadCallback(LuaScriptInterface* scriptInterface) {
 	int32_t id = scriptInterface->getEvent();
 	if (id == -1) {
-		SPDLOG_WARN("[NpcType::loadCallback] - Event not found");
+		g_logger().warn("[NpcType::loadCallback] - Event not found");
 		return false;
 	}
 
@@ -73,7 +72,7 @@ bool NpcType::loadCallback(LuaScriptInterface* scriptInterface) {
 	return true;
 }
 
-void NpcType::loadShop(NpcType* npcType, ShopBlock shopBlock) {
+void NpcType::loadShop(const std::shared_ptr<NpcType> &npcType, ShopBlock shopBlock) {
 	ItemType &iType = Item::items.getItemType(shopBlock.itemId);
 
 	// Registering item prices globaly.
@@ -109,10 +108,11 @@ void NpcType::loadShop(NpcType* npcType, ShopBlock shopBlock) {
 bool Npcs::load(bool loadLibs /* = true*/, bool loadNpcs /* = true*/, bool reloading /* = false*/) const {
 	if (loadLibs) {
 		auto coreFolder = g_configManager().getString(CORE_DIRECTORY);
-		return g_luaEnvironment.loadFile(coreFolder + "/npclib/load.lua", "load.lua") == 0;
+		return g_luaEnvironment().loadFile(coreFolder + "/npclib/load.lua", "load.lua") == 0;
 	}
 	if (loadNpcs) {
-		return g_scripts().loadScripts("npc", false, reloading);
+		auto datapackFolder = g_configManager().getString(DATA_DIRECTORY);
+		return g_scripts().loadScripts(datapackFolder + "/npc", false, reloading);
 	}
 	return false;
 }
@@ -133,7 +133,7 @@ bool Npcs::reload() {
 	return false;
 }
 
-NpcType* Npcs::getNpcType(const std::string &name, bool create /* = false*/) {
+std::shared_ptr<NpcType> Npcs::getNpcType(const std::string &name, bool create /* = false*/) {
 	std::string key = asLowerCaseString(name);
 	auto it = npcs.find(key);
 
@@ -141,11 +141,5 @@ NpcType* Npcs::getNpcType(const std::string &name, bool create /* = false*/) {
 		return it->second;
 	}
 
-	if (!create) {
-		return nullptr;
-	}
-
-	npcs[key] = new NpcType(name);
-
-	return npcs[key];
+	return create ? npcs[key] = std::make_shared<NpcType>(name) : nullptr;
 }

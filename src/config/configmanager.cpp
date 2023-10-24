@@ -9,10 +9,10 @@
 
 #include "pch.hpp"
 
-#include "config/configmanager.h"
+#include "config/configmanager.hpp"
 #include "declarations.hpp"
-#include "game/game.h"
-#include "lua/scripts/luajit_sync.hpp"
+#include "game/game.hpp"
+#include "server/network/webhook/webhook.hpp"
 
 #if LUA_VERSION_NUM >= 502
 	#undef lua_strlen
@@ -78,16 +78,20 @@ namespace {
 bool ConfigManager::load() {
 	lua_State* L = luaL_newstate();
 	if (!L) {
-		throw std::runtime_error("Failed to allocate memory");
+		throw std::ios_base::failure("Failed to allocate memory");
 	}
 
 	luaL_openlibs(L);
 
 	if (luaL_dofile(L, configFileLua.c_str())) {
-		SPDLOG_ERROR("[ConfigManager::load] - {}", lua_tostring(L, -1));
+		g_logger().error("[ConfigManager::load] - {}", lua_tostring(L, -1));
 		lua_close(L);
 		return false;
 	}
+
+#ifndef DEBUG_LOG
+	g_logger().setLevel(getGlobalString(L, "logLevel", "info"));
+#endif
 
 	// Parse config
 	// Info that must be loaded one time (unless we reset the modules involved)
@@ -105,6 +109,8 @@ bool ConfigManager::load() {
 		string[MAP_CUSTOM_AUTHOR] = getGlobalString(L, "mapCustomAuthor", "OTServBR");
 
 		string[HOUSE_RENT_PERIOD] = getGlobalString(L, "houseRentPeriod", "never");
+		floating[HOUSE_PRICE_RENT_MULTIPLIER] = getGlobalFloat(L, "housePriceRentMultiplier", 1.0);
+		floating[HOUSE_RENT_RATE] = getGlobalFloat(L, "houseRentRate", 1.0);
 		string[MYSQL_HOST] = getGlobalString(L, "mysqlHost", "127.0.0.1");
 		string[MYSQL_USER] = getGlobalString(L, "mysqlUser", "root");
 		string[MYSQL_PASS] = getGlobalString(L, "mysqlPass", "");
@@ -158,7 +164,6 @@ bool ConfigManager::load() {
 	boolean[HOUSE_OWNED_BY_ACCOUNT] = getGlobalBoolean(L, "houseOwnedByAccount", false);
 	boolean[CLEAN_PROTECTION_ZONES] = getGlobalBoolean(L, "cleanProtectionZones", false);
 	boolean[GLOBAL_SERVER_SAVE_SHUTDOWN] = getGlobalBoolean(L, "globalServerSaveShutdown", true);
-	boolean[ONLY_INVITED_CAN_MOVE_HOUSE_ITEMS] = getGlobalBoolean(L, "onlyInvitedCanMoveHouseItems", true);
 	boolean[PUSH_WHEN_ATTACKING] = getGlobalBoolean(L, "pushWhenAttacking", false);
 
 	boolean[WEATHER_RAIN] = getGlobalBoolean(L, "weatherRain", false);
@@ -178,6 +183,7 @@ bool ConfigManager::load() {
 	boolean[ONLY_PREMIUM_ACCOUNT] = getGlobalBoolean(L, "onlyPremiumAccount", false);
 	boolean[RATE_USE_STAGES] = getGlobalBoolean(L, "rateUseStages", false);
 	boolean[TOGGLE_IMBUEMENT_SHRINE_STORAGE] = getGlobalBoolean(L, "toggleImbuementShrineStorage", true);
+	boolean[TOGGLE_IMBUEMENT_NON_AGGRESSIVE_FIGHT_ONLY] = getGlobalBoolean(L, "toggleImbuementNonAggressiveFightOnly", false);
 
 	boolean[TOGGLE_DOWNLOAD_MAP] = getGlobalBoolean(L, "toggleDownloadMap", false);
 	boolean[USE_ANY_DATAPACK_FOLDER] = getGlobalBoolean(L, "useAnyDatapackFolder", false);
@@ -198,6 +204,7 @@ bool ConfigManager::load() {
 	string[GLOBAL_SERVER_SAVE_TIME] = getGlobalString(L, "globalServerSaveTime", "06:00");
 	string[DATA_DIRECTORY] = getGlobalString(L, "dataPackDirectory", "data-otservbr-global");
 	string[CORE_DIRECTORY] = getGlobalString(L, "coreDirectory", "data");
+
 	string[FORGE_FIENDISH_INTERVAL_TYPE] = getGlobalString(L, "forgeFiendishIntervalType", "hour");
 	string[FORGE_FIENDISH_INTERVAL_TIME] = getGlobalString(L, "forgeFiendishIntervalTime", "1");
 
@@ -211,8 +218,12 @@ bool ConfigManager::load() {
 	integer[RATE_MAGIC] = getGlobalNumber(L, "rateMagic", 1);
 	integer[RATE_SPAWN] = getGlobalNumber(L, "rateSpawn", 1);
 	integer[RATE_KILLING_IN_THE_NAME_OF_POINTS] = getGlobalNumber(L, "rateKillingInTheNameOfPoints", 1);
-	integer[HOUSE_PRICE] = getGlobalNumber(L, "housePriceEachSQM", 1000);
+
+	integer[HOUSE_PRICE_PER_SQM] = getGlobalNumber(L, "housePriceEachSQM", 1000);
 	integer[HOUSE_BUY_LEVEL] = getGlobalNumber(L, "houseBuyLevel", 0);
+	boolean[HOUSE_PURSHASED_SHOW_PRICE] = getGlobalBoolean(L, "housePurchasedShowPrice", false);
+	boolean[ONLY_INVITED_CAN_MOVE_HOUSE_ITEMS] = getGlobalBoolean(L, "onlyInvitedCanMoveHouseItems", true);
+
 	integer[ACTIONS_DELAY_INTERVAL] = getGlobalNumber(L, "timeBetweenActions", 200);
 	integer[EX_ACTIONS_DELAY_INTERVAL] = getGlobalNumber(L, "timeBetweenExActions", 1000);
 	integer[MAX_MESSAGEBUFFER] = getGlobalNumber(L, "maxMessageBuffer", 4);
@@ -224,7 +235,7 @@ bool ConfigManager::load() {
 	integer[WHITE_SKULL_TIME] = getGlobalNumber(L, "whiteSkullTime", 15 * 60 * 1000);
 	integer[STAIRHOP_DELAY] = getGlobalNumber(L, "stairJumpExhaustion", 2000);
 	integer[MAX_CONTAINER] = getGlobalNumber(L, "maxContainer", 500);
-	integer[MAX_ITEM] = getGlobalNumber(L, "maxItem", 10000);
+	integer[MAX_CONTAINER_ITEM] = getGlobalNumber(L, "maxItem", 5000);
 	integer[EXP_FROM_PLAYERS_LEVEL_RANGE] = getGlobalNumber(L, "expFromPlayersLevelRange", 75);
 	integer[CHECK_EXPIRED_MARKET_OFFERS_EACH_MINUTES] = getGlobalNumber(L, "checkExpiredMarketOffersEachMinutes", 60);
 	integer[MAX_MARKET_OFFERS_AT_A_TIME_PER_PLAYER] = getGlobalNumber(L, "maxMarketOffersAtATimePerPlayer", 100);
@@ -271,6 +282,7 @@ bool ConfigManager::load() {
 	integer[FORGE_MAX_SLIVERS] = getGlobalNumber(L, "forgeMaxSlivers", 7);
 	integer[FORGE_INFLUENCED_CREATURES_LIMIT] = getGlobalNumber(L, "forgeInfluencedLimit", 300);
 	integer[FORGE_FIENDISH_CREATURES_LIMIT] = getGlobalNumber(L, "forgeFiendishLimit", 3);
+	integer[DISCORD_WEBHOOK_DELAY_MS] = getGlobalNumber(L, "discordWebhookDelayMs", Webhook::DEFAULT_DELAY_MS);
 
 	floating[BESTIARY_RATE_CHARM_SHOP_PRICE] = getGlobalFloat(L, "bestiaryRateCharmShopPrice", 1.0);
 	floating[RATE_HEALTH_REGEN] = getGlobalFloat(L, "rateHealthRegen", 1.0);
@@ -290,6 +302,8 @@ bool ConfigManager::load() {
 	floating[RATE_BOSS_HEALTH] = getGlobalFloat(L, "rateBossHealth", 1.0);
 	floating[RATE_BOSS_ATTACK] = getGlobalFloat(L, "rateBossAttack", 1.0);
 	floating[RATE_BOSS_DEFENSE] = getGlobalFloat(L, "rateBossDefense", 1.0);
+	integer[BOSS_DEFAULT_TIME_TO_FIGHT_AGAIN] = getGlobalNumber(L, "bossDefaultTimeToFightAgain", 20 * 60 * 60);
+	integer[BOSS_DEFAULT_TIME_TO_DEFEAT] = getGlobalNumber(L, "bossDefaultTimeToDefeat", 20 * 60);
 
 	floating[RATE_NPC_HEALTH] = getGlobalFloat(L, "rateNpcHealth", 1.0);
 	floating[RATE_NPC_ATTACK] = getGlobalFloat(L, "rateNpcAttack", 1.0);
@@ -323,7 +337,9 @@ bool ConfigManager::load() {
 	boolean[TOGGLE_GOLD_POUCH_QUICKLOOT_ONLY] = getGlobalBoolean(L, "toggleGoldPouchQuickLootOnly", false);
 	boolean[TOGGLE_SERVER_IS_RETRO] = getGlobalBoolean(L, "toggleServerIsRetroPVP", false);
 	boolean[TOGGLE_TRAVELS_FREE] = getGlobalBoolean(L, "toggleTravelsFree", false);
-	boolean[DEVELOPMENT_MODE] = getGlobalBoolean(L, "developmentMode", true);
+	integer[BUY_AOL_COMMAND_FEE] = getGlobalNumber(L, "buyAolCommandFee", 0);
+	integer[BUY_BLESS_COMMAND_FEE] = getGlobalNumber(L, "buyBlessCommandFee", 0);
+	boolean[TELEPORT_PLAYER_TO_VOCATION_ROOM] = getGlobalBoolean(L, "teleportPlayerToVocationRoom", true);
 
 	boolean[TOGGLE_HAZARDSYSTEM] = getGlobalBoolean(L, "toogleHazardSystem", true);
 	integer[HAZARD_CRITICAL_INTERVAL] = getGlobalNumber(L, "hazardCriticalInterval", 2000);
@@ -349,7 +365,9 @@ bool ConfigManager::load() {
 	boolean[TOGGLE_WHEELSYSTEM] = getGlobalBoolean(L, "wheelSystemEnabled", true);
 	integer[WHEEL_POINTS_PER_LEVEL] = getGlobalNumber(L, "wheelPointsPerLevel", 1);
 
+	boolean[PARTY_AUTO_SHARE_EXPERIENCE] = getGlobalBoolean(L, "partyAutoShareExperience", true);
 	boolean[PARTY_SHARE_LOOT_BOOSTS] = getGlobalBoolean(L, "partyShareLootBoosts", true);
+	floating[PARTY_SHARE_LOOT_BOOSTS_DIMINISHING_FACTOR] = getGlobalFloat(L, "partyShareLootBoostsDimishingFactor", 0.7f);
 	integer[TIBIADROME_CONCOCTION_COOLDOWN] = getGlobalNumber(L, "tibiadromeConcoctionCooldown", 24 * 60 * 60);
 	integer[TIBIADROME_CONCOCTION_DURATION] = getGlobalNumber(L, "tibiadromeConcoctionDuration", 1 * 60 * 60);
 	string[TIBIADROME_CONCOCTION_TICK_TYPE] = getGlobalString(L, "tibiadromeConcoctionTickType", "online");
@@ -357,6 +375,24 @@ bool ConfigManager::load() {
 	string[M_CONST] = getGlobalString(L, "memoryConst", "1<<16");
 	integer[T_CONST] = getGlobalNumber(L, "temporaryConst", 2);
 	integer[PARALLELISM] = getGlobalNumber(L, "parallelism", 2);
+
+	// Vip System
+	boolean[VIP_SYSTEM_ENABLED] = getGlobalBoolean(L, "vipSystemEnabled", false);
+	integer[VIP_BONUS_EXP] = getGlobalNumber(L, "vipBonusExp", 0);
+	integer[VIP_BONUS_LOOT] = getGlobalNumber(L, "vipBonusLoot", 0);
+	integer[VIP_BONUS_SKILL] = getGlobalNumber(L, "vipBonusSkill", 0);
+	boolean[VIP_AUTOLOOT_VIP_ONLY] = getGlobalBoolean(L, "vipAutoLootVipOnly", false);
+	boolean[VIP_STAY_ONLINE] = getGlobalBoolean(L, "vipStayOnline", false);
+	integer[VIP_FAMILIAR_TIME_COOLDOWN_REDUCTION] = getGlobalNumber(L, "vipFamiliarTimeCooldownReduction", 0);
+
+	boolean[REWARD_CHEST_COLLECT_ENABLED] = getGlobalBoolean(L, "rewardChestCollectEnabled", true);
+	integer[REWARD_CHEST_MAX_COLLECT_ITEMS] = getGlobalNumber(L, "rewardChestMaxCollectItems", 200);
+
+	boolean[TOGGLE_MOUNT_IN_PZ] = getGlobalBoolean(L, "toggleMountInProtectionZone", false);
+
+	boolean[TOGGLE_HOUSE_TRANSFER_ON_SERVER_RESTART] = getGlobalBoolean(L, "togglehouseTransferOnRestart", false);
+
+	boolean[TOGGLE_RECEIVE_REWARD] = getGlobalBoolean(L, "toggleReceiveReward", false);
 
 	loaded = true;
 	lua_close(L);
@@ -375,7 +411,7 @@ static std::string dummyStr;
 
 const std::string &ConfigManager::getString(stringConfig_t what) const {
 	if (what >= LAST_STRING_CONFIG) {
-		SPDLOG_WARN("[ConfigManager::getString] - Accessing invalid index: {}", fmt::underlying(what));
+		g_logger().warn("[ConfigManager::getString] - Accessing invalid index: {}", fmt::underlying(what));
 		return dummyStr;
 	}
 	return string[what];
@@ -383,7 +419,7 @@ const std::string &ConfigManager::getString(stringConfig_t what) const {
 
 int32_t ConfigManager::getNumber(integerConfig_t what) const {
 	if (what >= LAST_INTEGER_CONFIG) {
-		SPDLOG_WARN("[ConfigManager::getNumber] - Accessing invalid index: {}", fmt::underlying(what));
+		g_logger().warn("[ConfigManager::getNumber] - Accessing invalid index: {}", fmt::underlying(what));
 		return 0;
 	}
 	return integer[what];
@@ -391,7 +427,7 @@ int32_t ConfigManager::getNumber(integerConfig_t what) const {
 
 int16_t ConfigManager::getShortNumber(integerConfig_t what) const {
 	if (what >= LAST_INTEGER_CONFIG) {
-		SPDLOG_WARN("[ConfigManager::getShortNumber] - Accessing invalid index: {}", fmt::underlying(what));
+		g_logger().warn("[ConfigManager::getShortNumber] - Accessing invalid index: {}", fmt::underlying(what));
 		return 0;
 	}
 	return integer[what];
@@ -399,7 +435,7 @@ int16_t ConfigManager::getShortNumber(integerConfig_t what) const {
 
 bool ConfigManager::getBoolean(booleanConfig_t what) const {
 	if (what >= LAST_BOOLEAN_CONFIG) {
-		SPDLOG_WARN("[ConfigManager::getBoolean] - Accessing invalid index: {}", fmt::underlying(what));
+		g_logger().warn("[ConfigManager::getBoolean] - Accessing invalid index: {}", fmt::underlying(what));
 		return false;
 	}
 	return boolean[what];
@@ -407,7 +443,7 @@ bool ConfigManager::getBoolean(booleanConfig_t what) const {
 
 float ConfigManager::getFloat(floatingConfig_t what) const {
 	if (what >= LAST_FLOATING_CONFIG) {
-		SPDLOG_WARN("[ConfigManager::getFLoat] - Accessing invalid index: {}", fmt::underlying(what));
+		g_logger().warn("[ConfigManager::getFLoat] - Accessing invalid index: {}", fmt::underlying(what));
 		return 0;
 	}
 	return floating[what];

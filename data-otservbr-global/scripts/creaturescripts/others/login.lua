@@ -14,16 +14,16 @@ local function onMovementRemoveProtection(cid, oldPos, time)
 end
 
 local function protectionZoneCheck(playerName)
-    doRemoveCreature(playerName)
-    return true
+	doRemoveCreature(playerName)
+	return true
 end
 
 local playerLogin = CreatureEvent("PlayerLogin")
 
 function playerLogin.onLogin(player)
 	local items = {
-		{3003, 1},
-		{3031, 3}
+		{ 3003, 1 },
+		{ 3457, 1 },
 	}
 	if player:getLastLoginSaved() == 0 then
 		player:sendOutfitWindow()
@@ -34,9 +34,9 @@ function playerLogin.onLogin(player)
 			end
 		end
 		player:addItem(2920, 1, true, 1, CONST_SLOT_AMMO)
-		db.query('UPDATE `players` SET `istutorial` = 0 where `id`='..player:getGuid())
+		db.query("UPDATE `players` SET `istutorial` = 0 where `id`=" .. player:getGuid())
 		-- Open channels
-		if table.contains({TOWNS_LIST.DAWNPORT, TOWNS_LIST.DAWNPORT_TUTORIAL}, player:getTown():getId())then
+		if table.contains({ TOWNS_LIST.DAWNPORT, TOWNS_LIST.DAWNPORT_TUTORIAL }, player:getTown():getId()) then
 			player:openChannel(3) -- World chat
 		else
 			player:openChannel(3) -- World chat
@@ -44,7 +44,7 @@ function playerLogin.onLogin(player)
 		end
 	else
 		player:sendTextMessage(MESSAGE_STATUS, SERVER_MOTD)
-		player:sendTextMessage(MESSAGE_LOGIN, string.format("Your last visit in ".. SERVER_NAME ..": %s.", os.date("%d. %b %Y %X", player:getLastLoginSaved())))
+		player:sendTextMessage(MESSAGE_LOGIN, string.format("Your last visit in " .. SERVER_NAME .. ": %s.", os.date("%d. %b %Y %X", player:getLastLoginSaved())))
 	end
 
 	-- Reset bosstiary time
@@ -58,33 +58,45 @@ function playerLogin.onLogin(player)
 	end
 	-- Premium Ends Teleport to Temple, change addon (citizen) houseless
 	local defaultTown = "Thais" -- default town where player is teleported if his home town is in premium area
-	local freeTowns = {"Ab'Dendriel", "Carlin", "Kazordoon", "Thais", "Venore", "Rookgaard", "Dawnport", "Dawnport Tutorial", "Island of Destiny"} -- towns in free account area
+	local freeTowns = { "Ab'Dendriel", "Carlin", "Kazordoon", "Thais", "Venore", "Rookgaard", "Dawnport", "Dawnport Tutorial", "Island of Destiny" } -- towns in free account area
 
-	if isPremium(player) == false and isInArray(freeTowns, player:getTown():getName()) == false then
+	if isPremium(player) == false and table.contains(freeTowns, player:getTown():getName()) == false then
 		local town = player:getTown()
 		local sex = player:getSex()
 		local home = getHouseByPlayerGUID(getPlayerGUID(player))
-		town = isInArray(freeTowns, town:getName()) and town or Town(defaultTown)
+		town = table.contains(freeTowns, town:getName()) and town or Town(defaultTown)
 		player:teleportTo(town:getTemplePosition())
 		player:setTown(town)
 		player:sendTextMessage(MESSAGE_FAILURE, "Your premium time has expired.")
 		player:setStorageValue(Storage.PremiumAccount, 0)
 		if sex == 1 then
-			player:setOutfit({lookType = 128, lookFeet = 114, lookLegs = 134, lookHead = 114,lookAddons = 0})
-        elseif sex == 0 then
-			player:setOutfit({lookType = 136, lookFeet = 114, lookLegs = 134, lookHead = 114, lookAddons = 0})
-        end
-        if home ~= nil and not isPremium(player) then
-            setHouseOwner(home, 0)
-            player:sendTextMessage(MESSAGE_GAME_HIGHLIGHT, 'You\'ve lost your house because you are not premium anymore.')
-			player:sendTextMessage(MESSAGE_GAME_HIGHLIGHT, 'Your items from house are send to your inbox.')
-        end
+			player:setOutfit({ lookType = 128, lookFeet = 114, lookLegs = 134, lookHead = 114, lookAddons = 0 })
+		elseif sex == 0 then
+			player:setOutfit({ lookType = 136, lookFeet = 114, lookLegs = 134, lookHead = 114, lookAddons = 0 })
+		end
+		if home ~= nil and not isPremium(player) then
+			setHouseOwner(home, 0)
+			player:sendTextMessage(MESSAGE_GAME_HIGHLIGHT, "You've lost your house because you are not premium anymore.")
+			player:sendTextMessage(MESSAGE_GAME_HIGHLIGHT, "Your items from house are send to your inbox.")
+		end
 	end
 	-- End 'Premium Ends Teleport to Temple'
 
+	-- Promotion
+	local vocation = player:getVocation()
+	local promotion = vocation:getPromotion()
+	if player:isPremium() then
+		local hasPromotion = player:kv():get("promoted")
+		if not player:isPromoted() and hasPromotion then
+			player:setVocation(promotion)
+		end
+	elseif player:isPromoted() then
+		player:setVocation(vocation:getDemotion())
+	end
+
 	-- Recruiter system
-	local resultId = db.storeQuery('SELECT `recruiter` from `accounts` where `id`='..getAccountNumberByPlayerName(getPlayerName(player)))
-	local recruiterStatus = Result.getNumber(resultId, 'recruiter')
+	local resultId = db.storeQuery("SELECT `recruiter` from `accounts` where `id`=" .. getAccountNumberByPlayerName(getPlayerName(player)))
+	local recruiterStatus = Result.getNumber(resultId, "recruiter")
 	local sex = player:getSex()
 	if recruiterStatus >= 1 then
 		if sex == 1 then
@@ -101,27 +113,27 @@ function playerLogin.onLogin(player)
 	end
 	if recruiterStatus >= 3 then
 		if sex == 1 then
-			local outfit = player:hasOutfit(746,1)
+			local outfit = player:hasOutfit(746, 1)
 			if outfit == false then
-				player:addOutfitAddon(746,1)
+				player:addOutfitAddon(746, 1)
 			end
 		else
-			local outfit = player:hasOutfit(745,1)
+			local outfit = player:hasOutfit(745, 1)
 			if outfit == false then
-				player:addOutfit(745,1)
+				player:addOutfit(745, 1)
 			end
 		end
 	end
 	if recruiterStatus >= 10 then
 		if sex == 1 then
-			local outfit = player:hasOutfit(746,2)
+			local outfit = player:hasOutfit(746, 2)
 			if outfit == false then
-				player:addOutfitAddon(746,2)
+				player:addOutfitAddon(746, 2)
 			end
 		else
-			local outfit = player:hasOutfit(745,2)
+			local outfit = player:hasOutfit(745, 2)
 			if outfit == false then
-				player:addOutfit(745,2)
+				player:addOutfit(745, 2)
 			end
 		end
 	end
@@ -146,8 +158,11 @@ function playerLogin.onLogin(player)
 
 	if SCHEDULE_EXP_RATE ~= 100 then
 		if SCHEDULE_EXP_RATE > 100 then
-			player:sendTextMessage(MESSAGE_BOOSTED_CREATURE, "Exp Rate Event! Monsters yield more experience points than usual \
-			Happy Hunting!")
+			player:sendTextMessage(
+				MESSAGE_BOOSTED_CREATURE,
+				"Exp Rate Event! Monsters yield more experience points than usual \
+			Happy Hunting!"
+			)
 		else
 			player:sendTextMessage(MESSAGE_BOOSTED_CREATURE, "Exp Rate Decreased! Monsters yield less experience points than usual.")
 		end
@@ -155,8 +170,11 @@ function playerLogin.onLogin(player)
 
 	if SCHEDULE_SPAWN_RATE ~= 100 then
 		if SCHEDULE_SPAWN_RATE > 100 then
-			player:sendTextMessage(MESSAGE_BOOSTED_CREATURE, "Spawn Rate Event! Monsters respawn at a faster rate \
-			Happy Hunting!")
+			player:sendTextMessage(
+				MESSAGE_BOOSTED_CREATURE,
+				"Spawn Rate Event! Monsters respawn at a faster rate \
+			Happy Hunting!"
+			)
 		else
 			player:sendTextMessage(MESSAGE_BOOSTED_CREATURE, "Spawn Rate Decreased! Monsters respawn at a slower rate.")
 		end
@@ -164,8 +182,11 @@ function playerLogin.onLogin(player)
 
 	if SCHEDULE_LOOT_RATE ~= 100 then
 		if SCHEDULE_LOOT_RATE > 100 then
-			player:sendTextMessage(MESSAGE_BOOSTED_CREATURE, "Loot Rate Event! Monsters carry more loot than usual \
-			Happy Hunting!")
+			player:sendTextMessage(
+				MESSAGE_BOOSTED_CREATURE,
+				"Loot Rate Event! Monsters carry more loot than usual \
+			Happy Hunting!"
+			)
 		else
 			player:sendTextMessage(MESSAGE_BOOSTED_CREATURE, "Loot Rate Decreased! Monsters carry less loot than usual.")
 		end
@@ -173,15 +194,16 @@ function playerLogin.onLogin(player)
 
 	if SCHEDULE_SKILL_RATE ~= 100 then
 		if SCHEDULE_SKILL_RATE > 100 then
-			player:sendTextMessage(MESSAGE_BOOSTED_CREATURE, "Skill Rate Event! Your skills progresses at a higher rate \
-			Happy Hunting!")
+			player:sendTextMessage(
+				MESSAGE_BOOSTED_CREATURE,
+				"Skill Rate Event! Your skills progresses at a higher rate \
+			Happy Hunting!"
+			)
 		else
 			player:sendTextMessage(MESSAGE_BOOSTED_CREATURE, "Skill Rate Decreased! Your skills progresses at a lower rate.")
 		end
 	end
 
-	-- Attempt to check if we're in a hazard zone
-	player:updateHazard()
 	-- Loyalty system
 	player:initializeLoyaltySystem()
 
@@ -194,8 +216,8 @@ function playerLogin.onLogin(player)
 	-- Concoction Duration
 	nextUseConcoctionTime[playerId] = 1
 
-	if (player:getAccountType() == ACCOUNT_TYPE_TUTOR) then
-	local msg = [[:: Tutor Rules
+	if player:getAccountType() == ACCOUNT_TYPE_TUTOR then
+		local msg = [[:: Tutor Rules
 		1 *> 3 Warnings you lose the job.
 		2 *> Without parallel conversations with players in Help, if the player starts offending, you simply mute it.
 		3 *> Be educated with the players in Help and especially in the Private, try to help as much as possible.
@@ -218,9 +240,8 @@ function playerLogin.onLogin(player)
 
 	-- Rewards
 	local rewards = #player:getRewardList()
-	if(rewards > 0) then
-		player:sendTextMessage(MESSAGE_LOGIN, string.format("You have %d %s in your reward chest.",
-		rewards, rewards > 1 and "rewards" or "reward"))
+	if rewards > 0 then
+		player:sendTextMessage(MESSAGE_LOGIN, string.format("You have %d %s in your reward chest.", rewards, rewards > 1 and "rewards" or "reward"))
 	end
 
 	-- Update player id
@@ -237,7 +258,16 @@ function playerLogin.onLogin(player)
 	-- Set Client XP Gain Rate --
 	if configManager.getBoolean(configKeys.XP_DISPLAY_MODE) then
 		local baseRate = player:getFinalBaseRateExperience()
-		player:setBaseXpGain(baseRate * 100)
+		baseRate = baseRate * 100
+		if configManager.getBoolean(configKeys.VIP_SYSTEM_ENABLED) then
+			local vipBonusExp = configManager.getNumber(configKeys.VIP_BONUS_EXP)
+			if vipBonusExp > 0 and player:isVip() then
+				vipBonusExp = (vipBonusExp > 100 and 100) or vipBonusExp
+				baseRate = baseRate * (1 + (vipBonusExp / 100))
+				player:sendTextMessage(MESSAGE_BOOSTED_CREATURE, "Normal base xp is: " .. baseRate .. "%, because you are VIP, bonus of " .. vipBonusExp .. "%")
+			end
+		end
+		player:setBaseXpGain(baseRate)
 	end
 
 	local staminaBonus = player:getFinalBonusStamina()
@@ -245,11 +275,13 @@ function playerLogin.onLogin(player)
 
 	player:getFinalLowLevelBonus()
 
-	if onExerciseTraining[player:getId()] then -- onLogin & onLogout
+	if onExerciseTraining[player:getId()] then
+		-- onLogin & onLogout
 		stopEvent(onExerciseTraining[player:getId()].event)
 		onExerciseTraining[player:getId()] = nil
 		player:setTraining(false)
 	end
 	return true
 end
+
 playerLogin:register()

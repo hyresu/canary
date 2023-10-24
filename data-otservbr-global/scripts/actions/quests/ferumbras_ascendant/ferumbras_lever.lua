@@ -20,7 +20,7 @@ local config = {
 		Position(33271, 31478, 14),
 		Position(33271, 31479, 14),
 		Position(33271, 31480, 14),
-		Position(33271, 31481, 14)
+		Position(33271, 31481, 14),
 	},
 	range = 20,
 	time = 30, -- time in minutes to remove the player
@@ -32,7 +32,7 @@ local function clearFerumbrasRoom()
 		if spectator:isPlayer() then
 			spectator:teleportTo(config.exitPosition)
 			spectator:getPosition():sendMagicEffect(CONST_ME_TELEPORT)
-			spectator:say('Time out! You were teleported out by strange forces.', TALKTYPE_MONSTER_SAY)
+			spectator:say("Time out! You were teleported out by strange forces.", TALKTYPE_MONSTER_SAY)
 		elseif spectator:isMonster() then
 			spectator:remove()
 		end
@@ -50,7 +50,7 @@ function ferumbrasAscendantLever.onUse(player, item, fromPosition, target, toPos
 			for y = 31477, 31481 do
 				local playerTile = Tile(Position(x, y, 14)):getTopCreature()
 				if playerTile and playerTile:isPlayer() then
-					if playerTile:getStorageValue(Storage.FerumbrasAscension.FerumbrasTimer) > os.time() then
+					if playerTile:canFightBoss("Ferumbras Mortal Shell") then
 						player:sendTextMessage(MESSAGE_EVENT_ADVANCE, "You or a member in your team have to wait 5 days to face Ferumbras again!")
 						item:transform(8912)
 						return true
@@ -83,11 +83,11 @@ function ferumbrasAscendantLever.onUse(player, item, fromPosition, target, toPos
 					playerTile:getPosition():sendMagicEffect(CONST_ME_POFF)
 					playerTile:teleportTo(config.newPos)
 					playerTile:getPosition():sendMagicEffect(CONST_ME_TELEPORT)
-					playerTile:setStorageValue(Storage.FerumbrasAscension.FerumbrasTimer, os.time() + 280 * 60 * 3600) -- 14 days
+					playerTile:setBossCooldown("Ferumbras Mortal Shell", os.time() + 280 * 60 * 3600) -- 14 days
 					player:sendTextMessage(MESSAGE_EVENT_ADVANCE, "You have 30 minutes to kill and loot this boss. Otherwise you will lose that chance and will be kicked out.")
 					addEvent(clearFerumbrasRoom, 60 * config.time * 1000, player:getId(), config.centerRoom, config.range, config.range, config.exitPosition)
 
-					for b = 1,10 do
+					for b = 1, 10 do
 						local xrand = math.random(-10, 10)
 						local yrand = math.random(-10, 10)
 						local position = Position(33392 + xrand, 31473 + yrand, 14)

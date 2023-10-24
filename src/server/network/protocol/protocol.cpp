@@ -9,19 +9,14 @@
 
 #include "pch.hpp"
 
-#include "server/network/protocol/protocol.h"
-#include "server/network/message/outputmessage.h"
-#include "security/rsa.h"
-#include "game/scheduling/tasks.h"
-
-Protocol::~Protocol() = default;
+#include "server/network/protocol/protocol.hpp"
+#include "server/network/message/outputmessage.hpp"
+#include "security/rsa.hpp"
+#include "game/scheduling/dispatcher.hpp"
 
 void Protocol::onSendMessage(const OutputMessage_ptr &msg) {
 	if (!rawMessages) {
-		uint32_t sendMessageChecksum = 0;
-		if (compreesionEnabled && msg->getLength() >= 128 && compression(*msg)) {
-			sendMessageChecksum = (1U << 31);
-		}
+		const uint32_t sendMessageChecksum = msg->getLength() >= 128 && compression(*msg) ? (1U << 31) : 0;
 
 		msg->writeMessageLength();
 
@@ -45,20 +40,18 @@ void Protocol::onSendMessage(const OutputMessage_ptr &msg) {
 
 bool Protocol::sendRecvMessageCallback(NetworkMessage &msg) {
 	if (encryptionEnabled && !XTEA_decrypt(msg)) {
-		SPDLOG_ERROR("[Protocol::onRecvMessage] - XTEA_decrypt Failed");
+		g_logger().error("[Protocol::onRecvMessage] - XTEA_decrypt Failed");
 		return false;
 	}
 
-	auto protocolWeak = std::weak_ptr<Protocol>(shared_from_this());
-	std::function<void(void)> callback = [protocolWeak, &msg]() {
+	g_dispatcher().addEvent([&msg, protocolWeak = std::weak_ptr<Protocol>(shared_from_this())]() {
 		if (auto protocol = protocolWeak.lock()) {
 			if (auto protocolConnection = protocol->getConnection()) {
 				protocol->parsePacket(msg);
 				protocolConnection->resumeWork();
 			}
-		}
-	};
-	g_dispatcher().addTask(createTask(callback));
+		} }, __FUNCTION__);
+
 	return true;
 }
 
@@ -204,49 +197,41 @@ uint32_t Protocol::getIP() const {
 	return 0;
 }
 
-void Protocol::enableCompression() {
-	if (!compreesionEnabled) {
-		int32_t compressionLevel = g_configManager().getNumber(COMPRESSION_LEVEL);
-		if (compressionLevel != 0) {
-			defStream.reset(new z_stream);
-			defStream->zalloc = Z_NULL;
-			defStream->zfree = Z_NULL;
-			defStream->opaque = Z_NULL;
-			if (deflateInit2(defStream.get(), compressionLevel, Z_DEFLATED, -15, 9, Z_DEFAULT_STRATEGY) != Z_OK) {
-				defStream.reset();
-				SPDLOG_ERROR("[Protocol::enableCompression()] - Zlib deflateInit2 error: {}", (defStream->msg ? defStream->msg : " unknown error"));
-			} else {
-				compreesionEnabled = true;
-			}
-		}
-	}
-}
-
 bool Protocol::compression(OutputMessage &msg) const {
-	auto outputMessageSize = msg.getLength();
+	if (checksumMethod != CHECKSUM_METHOD_SEQUENCE) {
+		return false;
+	}
+
+	static const thread_local auto &compress = std::make_unique<ZStream>();
+	if (!compress->stream) {
+		return false;
+	}
+
+	const auto outputMessageSize = msg.getLength();
 	if (outputMessageSize > NETWORKMESSAGE_MAXSIZE) {
-		SPDLOG_ERROR("[NetworkMessage::compression] - Exceded NetworkMessage max size: {}, actually size: {}", NETWORKMESSAGE_MAXSIZE, outputMessageSize);
+		g_logger().error("[NetworkMessage::compression] - Exceded NetworkMessage max size: {}, actually size: {}", NETWORKMESSAGE_MAXSIZE, outputMessageSize);
 		return false;
 	}
 
-	static thread_local std::array<char, NETWORKMESSAGE_MAXSIZE> defBuffer;
-	defStream->next_in = msg.getOutputBuffer();
-	defStream->avail_in = outputMessageSize;
-	defStream->next_out = (Bytef*)defBuffer.data();
-	defStream->avail_out = NETWORKMESSAGE_MAXSIZE;
+	compress->stream->next_in = msg.getOutputBuffer();
+	compress->stream->avail_in = outputMessageSize;
+	compress->stream->next_out = reinterpret_cast<Bytef*>(compress->buffer.data());
+	compress->stream->avail_out = NETWORKMESSAGE_MAXSIZE;
 
-	if (int32_t ret = deflate(defStream.get(), Z_FINISH);
-		ret != Z_OK && ret != Z_STREAM_END) {
+	const int32_t ret = deflate(compress->stream.get(), Z_FINISH);
+	if (ret != Z_OK && ret != Z_STREAM_END) {
 		return false;
 	}
-	auto totalSize = static_cast<uint32_t>(defStream->total_out);
-	deflateReset(defStream.get());
+
+	const auto totalSize = compress->stream->total_out;
+	deflateReset(compress->stream.get());
+
 	if (totalSize == 0) {
 		return false;
 	}
 
 	msg.reset();
-	auto charData = static_cast<char*>(static_cast<void*>(defBuffer.data()));
-	msg.addBytes(charData, static_cast<size_t>(totalSize));
+	msg.addBytes(compress->buffer.data(), totalSize);
+
 	return true;
 }

@@ -9,12 +9,12 @@
 
 #include "pch.hpp"
 
-#include "lua/scripts/luascript.h"
+#include "lua/scripts/luascript.hpp"
 #include "lua/scripts/lua_environment.hpp"
 
 ScriptEnvironment::DBResultMap ScriptEnvironment::tempResults;
 uint32_t ScriptEnvironment::lastResultId = 0;
-std::multimap<ScriptEnvironment*, Item*> ScriptEnvironment::tempItems;
+std::multimap<ScriptEnvironment*, std::shared_ptr<Item>> ScriptEnvironment::tempItems;
 
 ScriptEnvironment LuaFunctionsLoader::scriptEnv[16];
 int32_t LuaFunctionsLoader::scriptEnvIndex = -1;
@@ -28,8 +28,8 @@ LuaScriptInterface::~LuaScriptInterface() {
 }
 
 bool LuaScriptInterface::reInitState() {
-	g_luaEnvironment.clearCombatObjects(this);
-	g_luaEnvironment.clearAreaObjects(this);
+	g_luaEnvironment().clearCombatObjects(this);
+	g_luaEnvironment().clearAreaObjects(this);
 
 	closeState();
 	return initState();
@@ -196,7 +196,7 @@ bool LuaScriptInterface::pushFunction(int32_t functionId) {
 }
 
 bool LuaScriptInterface::initState() {
-	luaState = g_luaEnvironment.getLuaState();
+	luaState = g_luaEnvironment().getLuaState();
 	if (!luaState) {
 		return false;
 	}
@@ -208,7 +208,11 @@ bool LuaScriptInterface::initState() {
 }
 
 bool LuaScriptInterface::closeState() {
-	if (!g_luaEnvironment.getLuaState() || !luaState) {
+	if (LuaEnvironment::isShuttingDown()) {
+		luaState = nullptr;
+	}
+
+	if (!luaState || !g_luaEnvironment().getLuaState()) {
 		return false;
 	}
 

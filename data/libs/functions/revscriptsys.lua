@@ -1,6 +1,6 @@
 -- Create functions revscriptsys
 function createFunctions(class)
-	local exclude = {[2] = {"is"}, [3] = {"get", "set", "add", "can"}, [4] = {"need"}}
+	local exclude = { [2] = { "is" }, [3] = { "get", "set", "add", "can" }, [4] = { "need" } }
 	local temp = {}
 	for name, func in pairs(class) do
 		local add = true
@@ -11,12 +11,16 @@ function createFunctions(class)
 		end
 		if add then
 			local str = name:sub(1, 1):upper() .. name:sub(2)
-			local getFunc = function(self) return func(self) end
-			local setFunc = function(self, ...) return func(self, ...) end
+			local getFunc = function(self)
+				return func(self)
+			end
+			local setFunc = function(self, ...)
+				return func(self, ...)
+			end
 			local get = "get" .. str
 			local set = "set" .. str
 			if not (rawget(class, get) and rawget(class, set)) then
-				table.insert(temp, {set, setFunc, get, getFunc})
+				table.insert(temp, { set, setFunc, get, getFunc })
 			end
 		end
 	end
@@ -96,6 +100,22 @@ do
 		rawset(self, key, value)
 	end
 	rawgetmetatable("TalkAction").__newindex = TalkActionNewIndex
+end
+
+-- Sets a custom __newindex behavior for the EventCallback class's metatable. It dynamically maps certain keys to predefined callback methods within the EventCallback class. When a key matching a method name is added, it triggers the associated function, sets the event type, and logs the registration. This allows for flexible, runtime assignment of various event handlers through Lua scripts.
+local eventCallbacks = Game.getEventCallbacks()
+do
+	local function EventCallbackNewIndex(self, key, value)
+		local func = eventCallbacks[key]
+		if func and type(func) == "function" then
+			logger.debug("[Registering EventCallback: {}", key)
+			func(self, value)
+			self:type(key)
+		else
+			reportError("Invalid EventCallback with name: {}", tostring(key))
+		end
+	end
+	rawgetmetatable("EventCallback").__newindex = EventCallbackNewIndex
 end
 
 -- CreatureEvent revscriptsys

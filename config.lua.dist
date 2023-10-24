@@ -6,9 +6,11 @@ useAnyDatapackFolder = false
 dataPackDirectory = "data-otservbr-global"
 -- Don't change this unless you know what you're doing
 coreDirectory = "data"
--- Enable/disable development mode
--- NOTE: In development mode, additional logs will be enabled, for deputation and testing purposes.
-developmentMode = false
+
+-- Set log level
+-- It can be trace, debug, info, warning, error, critical, off (default: info).
+-- NOTE: Will only display logs with level higher or equal the one set.
+logLevel = "debug"
 
 -- Combat settings
 -- NOTE: valid values for worldType are: "pvp", "no-pvp" and "pvp-enforced"
@@ -32,7 +34,6 @@ redSkullDuration = 1
 blackSkullDuration = 3
 orangeSkullDuration = 7
 
-onlyInvitedCanMoveHouseItems = true
 cleanProtectionZones = false
 
 -- Connection Config
@@ -159,8 +160,11 @@ wheelPointsPerLevel = 1
 -- Only change it here if you know what you are doing or to make testing easier with familiars
 familiarTime = 30
 
--- Tibiadrome concoctions
+partyAutoShareExperience = true
 partyShareLootBoosts = false
+partyShareLootBoostsDimishingFactor = 0.7
+
+-- Tibiadrome concoctions
 tibiadromeConcoctionCooldown = 24 * 60 * 60 -- 24 hours
 tibiadromeConcoctionDuration = 60 * 60 -- 1 hour
 tibiadromeConcoctionTickType = "online" -- "online" | "experience"
@@ -179,6 +183,10 @@ onlyPremiumAccount = false
 -- NOTE: toggleGoldPouchQuickLootOnly will ONLY allow quickloot to move items to gold pouch
 -- NOTE: toggleServerIsRetroPVP will make this server as retro, setting PARTY_PROTECTION and ADVANCED_SECURE_MODE to 0
 -- NOTE: toggleTravelsFree will make all travels from boat free
+-- NOTE: buyAolCommandFee will add fee when player buy aol by command (!aol), active changing value more than 0 (fee value. ex: 1 = 1gp  aol will be 50001)
+-- NOTE: buyBlessCommandFee will add fee when player buy bless by command (!bless), active changing value between 1 and 100 (fee percent. ex: 3 = 3%, 30 = 30%)
+-- NOTE: teleportPlayerToVocationRoom will enable oressa to teleport player to his/her room vocation
+-- NOTE: toggleReceiveReward = true, will enable players to choose one of reward exercise weapon by command !reward
 weatherRain = false
 thunderEffect = false
 allConsoleLog = false
@@ -190,6 +198,10 @@ toggleGoldPouchAllowAnything = false
 toggleGoldPouchQuickLootOnly = false
 toggleServerIsRetroPVP = false
 toggleTravelsFree = false
+buyAolCommandFee = 0
+buyBlessCommandFee = 0
+teleportPlayerToVocationRoom = true
+toggleReceiveReward = false
 
 -- Teleport summon
 -- Set to true will never remove the summon
@@ -224,6 +236,7 @@ saveIntervalTime = 1
 
 -- Imbuement
 toggleImbuementShrineStorage = false
+toggleImbuementNonAggressiveFightOnly = false
 
 -- Free quests
 -- Add quest access to player when logging in
@@ -242,11 +255,22 @@ deathLosePercent = -1
 -- Houses
 -- NOTE: set housePriceEachSQM to -1 to disable the ingame buy house functionality
 -- NOTE: set houseBuyLevel to 0 to disable the min level purchase functionality.
+--[[ NOTE: The togglehouseTransferOnRestart setting controls whether house transfers/leave are true/false upon server restart.
+• When set to true, the transfers will only occur during a server restart.
+Setting this to false may pose risks; if a house is abandoned and contains a large number of items on the floor, those items will be transferred to the player's depot instantly.
+• This could potentially freeze the server due to the heavy operation. It's advised to keep this setting enabled (true) to minimize risks.
+]]
 -- Periods: daily/weekly/monthly/yearly/never
+-- Base: sqm,rent,sqm+rent
+housePriceRentMultiplier = 0.0
 housePriceEachSQM = 1000
 houseRentPeriod = "never"
+houseRentRate = 1.0
 houseOwnedByAccount = false
 houseBuyLevel = 100
+housePurchasedShowPrice = false
+onlyInvitedCanMoveHouseItems = true
+togglehouseTransferOnRestart = true
 
 -- Item Usage
 timeBetweenActions = 200
@@ -266,7 +290,7 @@ pushWhenAttacking = false
 -- NOTE: If a map with the name already exists in the world folder, the map will not be downloaded even if the toggleDownloadMap is true
 toggleDownloadMap = true
 mapName = "otservbr"
-mapDownloadUrl = "https://github.com/opentibiabr/canary/releases/download/v1.5.0/otservbr.otbm"
+mapDownloadUrl = "https://github.com/opentibiabr/canary/releases/download/v3.0.0/otservbr.otbm"
 mapAuthor = "OpenTibiaBR"
 
 -- Party List limitations
@@ -311,6 +335,7 @@ resetSessionsOnStartup = false
 -- Misc.
 -- NOTE: experienceDisplayRates: set to false to ignore exp rate or true to include exp rate
 allowChangeOutfit = true
+toggleMountInProtectionZone = false
 freePremium = false
 kickIdlePlayerAfterMinutes = 15
 maxMessageBuffer = 4
@@ -387,6 +412,9 @@ rateBossHealth = 1.0
 rateBossAttack = 1.0
 rateBossDefense = 1.0
 
+bossDefaultTimeToFightAgain = 20 * 60 * 60 -- 20 hours
+bossDefaultTimeToDefeat = 20 * 60 -- 20 minutes
+
 -- Monsters
 deSpawnRange = 2
 deSpawnRadius = 50
@@ -415,3 +443,28 @@ location = "South America"
 -- Leave empty if you wish to disable.
 discordWebhookURL = ""
 
+-- Vip System (Get more info in: https://github.com/opentibiabr/canary/pull/1063)
+-- NOTE: set vipSystemEnabled to true to enable the vip system functionalities (this overrides premium checks)
+-- NOTE: vipBonusExp = 0 is deactivated, active changing value between 1 and 100 (percent xp bonus to gain. ex: 3 = 3%, 30 = 30%)
+-- NOTE: vipBonusLoot = 0 is deactivated, active changing value between 1 and 100 (percent loot bonus to gain. ex: 3 = 3%, 30 = 30%)
+-- NOTE: vipBonusSkill = 0 is deactivated, active changing value between 1 and 100 (percent skill bonus to gain. ex: 3 = 3%, 30 = 30%)
+-- NOTE: vipAutoLootVipOnly = activates only vip to get automatic loot, config 'autoLoot' need to be enabled, for this config works
+-- NOTE: vipStayOnline = when this config is activated, players vip will not be kicked after 'kickIdlePlayerAfterMinutes' config
+-- NOTE: vipFamiliarTimeCooldownReduction = the minutes that will be debited from the familiar time cooldown for vip accounts, use 0 to deactivate the reduction (the default maximum value is 15, but it is calculated automatically)
+-- 		examples: The default config 'familiarTime' is 30, this value is divided by 2 (15 minutes familiar and 15 minutes to cooldown)
+-- 		If you use 'vipFamiliarTimeCooldownReduction = 10' the vip players will have only, in this case, 5 minutes of cooldown.
+-- 		If you use 'vipFamiliarTimeCooldownReduction' greater than half of 'familiarTime', it will get the highest possible value, in this case 15
+-- NOTE: GainCoin function, please configure script: data-otservbr-global/scripts/globalevents/vip/online_coins.lua
+-- NOTE: GainToken function, please configure script: data-otservbr-global/scripts/globalevents/vip/online_tokens.lua
+vipSystemEnabled = false
+vipBonusExp = 0
+vipBonusLoot = 0
+vipBonusSkill = 0
+vipAutoLootVipOnly = false
+vipStayOnline = false
+vipFamiliarTimeCooldownReduction = 0
+
+-- NOTE: set rewardChestCollectEnabled to true to enable the reward collect system
+-- NOTE set rewardChestMaxCollectItems max items per collect action
+rewardChestCollectEnabled = true
+rewardChestMaxCollectItems = 200
