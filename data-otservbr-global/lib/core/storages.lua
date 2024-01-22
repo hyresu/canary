@@ -8,7 +8,7 @@ Reserved player action storage key ranges (const.h)
 	[2001 - 2011]
 
 	Others reserved player action/storages
-	[100] = unmoveable/untrade/unusable items
+	[100] = unmovable/untrade/unusable items
 	[101] = use pick floor
 	[102] = well down action
 	[103-120] = others keys action
@@ -79,8 +79,6 @@ Reserved player action storage key ranges (const.h)
 
 Storage = {
 	-- General storages
-	IsTraining = 30000,
-	-- Reserved in Global.Storage.NpcExhaust = 30001
 	Dragonfetish = 30003,
 	EdronRopeQuest = 30004,
 	GhostShipQuest = 30005,
@@ -102,10 +100,7 @@ Storage = {
 	RookgaardDestiny = 30020,
 	EruaranGreeting = 30021,
 	MaryzaCookbook = 30022,
-	-- Reserved in Global.Storage.CombatProtectionStorage = 30023
 	Factions = 30024,
-	-- Reserved in Global.Storage.BlockMovementStorage = 30025
-	-- Reserved in Global.Storage.FamiliarSummon = 30026
 	-- unused TrainerRoom = 30027,
 	-- unused NpcSpawn = 30028,
 	ExerciseDummyExhaust = 30029,
@@ -130,7 +125,6 @@ Storage = {
 	Navigator = 30048,
 	DwarvenLegs = 30049,
 	PrinceDrazzakTime = 30050,
-	-- Reserved in Global.Storage.StoreExaust = 30051
 	LemonCupcake = 30052,
 	BlueberryCupcake = 30053,
 	-- Reserved in Global.Storage.FamiliarSummonEvent10 = 30054
@@ -908,6 +902,7 @@ Storage = {
 		DeeplingAnchor = 51023,
 		FirstOrientalAddon = 51024,
 		SecondOrientalAddon = 51025,
+		RoyalCostumeOutfit = 51026,
 	},
 	TheAncientTombs = {
 		-- Reserved storage from 50940 - 51059
@@ -1704,8 +1699,6 @@ Storage = {
 		-- Reserved storage 52396-52410 (TheOrderOfTheLion)
 		Drume = {
 			Commander = 52396, -- Global
-			TotalLionCommanders = 52397, -- Global
-			TotalUsurperCommanders = 52398, -- Global
 		},
 	},
 	-- News quest development
@@ -2767,6 +2760,8 @@ Storage = {
 				GoshnarMegalomaniaAccess = 47220,
 				GoshnarMegalomaniaKilled = 47222,
 				QuestReward = 47223,
+				OutfitReward = 47224,
+				MountReward = 47225,
 			},
 		},
 		U12_60 = { -- update 12.60 - Reserved Storages 47501 - 47600
@@ -2791,10 +2786,6 @@ Storage = {
 		U12_90 = { -- update 12.90 - Reserved Storages 47851 - 47900
 			PrimalOrdeal = {
 				QuestLine = 47851,
-				Hazard = {
-					Current = 47856,
-					Max = 47857,
-				},
 				Bosses = {
 					MagmaBubbleKilled = 47853,
 					ThePrimalMenaceKilled = 47855,
@@ -2960,6 +2951,7 @@ GlobalStorage = {
 		ZamuloshSummon = 60030,
 		FerumbrasEssence = 60031,
 		DesperateSoul = 60032,
+		FlowerPuzzleTimer = 60033,
 		Crystals = {
 			Crystal1 = 60040,
 			Crystal2 = 60041,
@@ -3064,6 +3056,17 @@ GlobalStorage = {
 		ThalasSwitchesGlobalStorage = 60160,
 		DiprathSwitchesGlobalStorage = 60161,
 		AshmunrahSwitchesGlobalStorage = 60162,
+	},
+	TheOrderOfTheLion = {
+		-- Reserved storage from 60170 - 60171
+		Drume = {
+			TotalLionCommanders = 60170, -- Global
+			TotalUsurperCommanders = 60171, -- Global
+		},
+	},
+	HeartOfDestruction = {
+		-- Reserved storage from 60172 - 60177
+		ChargedAnomaly = 60172,
 	},
 	FuryGates = 65000,
 	Yakchal = 65001,

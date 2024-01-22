@@ -323,13 +323,13 @@ local function addFerumbrasAscendantReward(player, target, toPosition)
 		end
 	end
 
-	if target.itemid == 10551 and target.actionid == 53803 then
-		if player:getStorageValue(Storage.FerumbrasAscendant.Ring) >= 1 then
+	if target.itemid == 22872 and target.actionid == 53803 then
+		if player:getStorageValue(Storage.FerumbrasAscension.Ring) >= 1 then
 			return false
 		end
 
 		player:addItem(22170, 1)
-		player:setStorageValue(Storage.FerumbrasAscendant.Ring, 1)
+		player:setStorageValue(Storage.FerumbrasAscension.Ring, 1)
 	end
 end
 
@@ -625,10 +625,6 @@ function onUsePick(player, item, fromPosition, target, toPosition, isHotkey)
 		end
 		target:getPosition():sendMagicEffect(CONST_ME_BLOCKHIT)
 		target:remove(1)
-	elseif target.itemid == 10310 then
-		target:remove(1)
-		toPosition:sendMagicEffect(CONST_ME_POFF)
-		player:addItem(3035, 10)
 	elseif target.itemid == 7200 then
 		target:transform(7236)
 		target:decay()

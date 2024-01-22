@@ -13,6 +13,7 @@
 #include "io/io_bosstiary.hpp"
 #include "creatures/combat/spells.hpp"
 #include "creatures/monsters/monsters.hpp"
+#include "creatures/monsters/monster.hpp"
 #include "lua/functions/creatures/monster/monster_type_functions.hpp"
 #include "lua/scripts/scripts.hpp"
 
@@ -425,13 +426,13 @@ int MonsterTypeFunctions::luaMonsterTypeEnemyFactions(lua_State* L) {
 			lua_createtable(L, monsterType->info.enemyFactions.size(), 0);
 			int index = 0;
 
-			for (auto faction : monsterType->info.enemyFactions) {
+			for (const auto &faction : monsterType->info.enemyFactions) {
 				lua_pushnumber(L, faction);
 				lua_rawseti(L, -2, ++index);
 			}
 		} else {
 			Faction_t faction = getNumber<Faction_t>(L, 2);
-			monsterType->info.enemyFactions.emplace(faction);
+			monsterType->info.enemyFactions.insert(faction);
 			pushBoolean(L, true);
 		}
 	} else {
@@ -1002,7 +1003,13 @@ int MonsterTypeFunctions::luaMonsterTypeRegisterEvent(lua_State* L) {
 	// monsterType:registerEvent(name)
 	const auto monsterType = getUserdataShared<MonsterType>(L, 1);
 	if (monsterType) {
-		monsterType->info.scripts.push_back(getString(L, 2));
+		auto eventName = getString(L, 2);
+		monsterType->info.scripts.insert(eventName);
+		for (const auto &[_, monster] : g_game().getMonsters()) {
+			if (monster->getMonsterType() == monsterType) {
+				monster->registerCreatureEvent(eventName);
+			}
+		}
 		pushBoolean(L, true);
 	} else {
 		lua_pushnil(L);
@@ -1152,7 +1159,7 @@ int MonsterTypeFunctions::luaMonsterTypeOutfit(lua_State* L) {
 			pushOutfit(L, monsterType->info.outfit);
 		} else {
 			Outfit_t outfit = getOutfit(L, 2);
-			if (g_configManager().getBoolean(WARN_UNSAFE_SCRIPTS) && outfit.lookType != 0 && !g_game().isLookTypeRegistered(outfit.lookType)) {
+			if (g_configManager().getBoolean(WARN_UNSAFE_SCRIPTS, __FUNCTION__) && outfit.lookType != 0 && !g_game().isLookTypeRegistered(outfit.lookType)) {
 				g_logger().warn("[MonsterTypeFunctions::luaMonsterTypeOutfit] An unregistered creature looktype type with id '{}' was blocked to prevent client crash.", outfit.lookType);
 				lua_pushnil(L);
 			} else {

@@ -9,32 +9,32 @@
 
 #pragma once
 #include "utils/tools.hpp"
-
-static constexpr auto SYSTEM_TIME_ZERO = std::chrono::system_clock::time_point(std::chrono::milliseconds(0));
+#include <unordered_set>
 
 class Task {
 public:
-	static std::chrono::system_clock::time_point TIME_NOW;
-
 	Task(uint32_t expiresAfterMs, std::function<void(void)> &&f, std::string_view context) :
-		expiration(expiresAfterMs > 0 ? TIME_NOW + std::chrono::milliseconds(expiresAfterMs) : SYSTEM_TIME_ZERO),
-		context(context), func(std::move(f)) {
+		func(std::move(f)), context(context), utime(OTSYS_TIME()), expiration(expiresAfterMs > 0 ? OTSYS_TIME() + expiresAfterMs : 0) {
 		assert(!this->context.empty() && "Context cannot be empty!");
 	}
 
 	Task(std::function<void(void)> &&f, std::string_view context, uint32_t delay, bool cycle = false, bool log = true) :
-		cycle(cycle), log(log), delay(delay), utime(TIME_NOW + std::chrono::milliseconds(delay)), context(context), func(std::move(f)) {
+		func(std::move(f)), context(context), utime(OTSYS_TIME() + delay), delay(delay), cycle(cycle), log(log) {
 		assert(!this->context.empty() && "Context cannot be empty!");
 	}
 
 	~Task() = default;
 
-	void setEventId(uint64_t id) {
-		eventId = id;
-	}
+	uint64_t getId() {
+		if (id == 0) {
+			if (++LAST_EVENT_ID == 0) {
+				LAST_EVENT_ID = 1;
+			}
 
-	uint64_t getEventId() const {
-		return eventId;
+			id = LAST_EVENT_ID;
+		}
+
+		return id;
 	}
 
 	uint32_t getDelay() const {
@@ -50,7 +50,7 @@ public:
 	}
 
 	bool hasExpired() const {
-		return expiration != SYSTEM_TIME_ZERO && expiration < TIME_NOW;
+		return expiration != 0 && expiration < OTSYS_TIME();
 	}
 
 	bool isCycle() const {
@@ -58,43 +58,24 @@ public:
 	}
 
 	bool isCanceled() const {
-		return canceled;
+		return func == nullptr;
 	}
 
 	void cancel() {
-		canceled = true;
 		func = nullptr;
 	}
 
 	bool execute() const;
 
-	void updateTime() {
-		utime = TIME_NOW + std::chrono::milliseconds(delay);
-	}
-
-	uint64_t generateId() {
-		if (eventId == 0) {
-			if (++LAST_EVENT_ID == 0) {
-				LAST_EVENT_ID = 1;
-			}
-
-			eventId = LAST_EVENT_ID;
-		}
-
-		return eventId;
-	}
-
-	struct Compare {
-		bool operator()(const std::shared_ptr<Task> &a, const std::shared_ptr<Task> &b) const {
-			return b->utime < a->utime;
-		}
-	};
-
 private:
 	static std::atomic_uint_fast64_t LAST_EVENT_ID;
 
+	void updateTime() {
+		utime = OTSYS_TIME() + delay;
+	}
+
 	bool hasTraceableContext() const {
-		const static auto tasksContext = phmap::flat_hash_set<std::string>({
+		const static auto tasksContext = std::unordered_set<std::string_view>({
 			"Creature::checkCreatureWalk",
 			"Decay::checkDecay",
 			"Dispatcher::asyncEvent",
@@ -115,24 +96,33 @@ private:
 			"Raids::checkRaids",
 			"SpawnMonster::checkSpawnMonster",
 			"SpawnMonster::scheduleSpawn",
+			"SpawnMonster::startup",
 			"SpawnNpc::checkSpawnNpc",
 			"Webhook::run",
 			"Protocol::sendRecvMessageCallback",
+			"sendRecvMessageCallback",
 		});
 
 		return tasksContext.contains(context);
 	}
 
-	bool canceled = false;
+	struct Compare {
+		bool operator()(const std::shared_ptr<Task> &a, const std::shared_ptr<Task> &b) const {
+			return a->utime < b->utime;
+		}
+	};
+
+	std::function<void(void)> func = nullptr;
+	std::string context;
+
+	int64_t utime = 0;
+	int64_t expiration = 0;
+
+	uint64_t id = 0;
+	uint32_t delay = 0;
+
 	bool cycle = false;
 	bool log = true;
 
-	uint32_t delay = 0;
-	uint64_t eventId = 0;
-
-	std::chrono::system_clock::time_point utime = SYSTEM_TIME_ZERO;
-	std::chrono::system_clock::time_point expiration = SYSTEM_TIME_ZERO;
-
-	std::string_view context;
-	std::function<void(void)> func = nullptr;
+	friend class Dispatcher;
 };

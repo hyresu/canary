@@ -1165,16 +1165,16 @@ bool ConditionRegeneration::executeCondition(std::shared_ptr<Creature> creature,
 	internalHealthTicks += interval;
 	internalManaTicks += interval;
 	auto player = creature->getPlayer();
-	int32_t PlayerdailyStreak = 0;
+	int32_t dailyStreak = 0;
 	if (player) {
-		PlayerdailyStreak = player->getStorageValue(STORAGEVALUE_DAILYREWARD);
+		dailyStreak = static_cast<int32_t>(player->kv()->scoped("daily-reward")->get("streak")->getNumber());
 	}
-	if (creature->getZoneType() != ZONE_PROTECTION || PlayerdailyStreak >= DAILY_REWARD_HP_REGENERATION) {
+	if (creature->getZoneType() != ZONE_PROTECTION || dailyStreak >= DAILY_REWARD_HP_REGENERATION) {
 		if (internalHealthTicks >= getHealthTicks(creature)) {
 			internalHealthTicks = 0;
 
 			int32_t realHealthGain = creature->getHealth();
-			if (creature->getZoneType() == ZONE_PROTECTION && PlayerdailyStreak >= DAILY_REWARD_DOUBLE_HP_REGENERATION) {
+			if (creature->getZoneType() == ZONE_PROTECTION && dailyStreak >= DAILY_REWARD_DOUBLE_HP_REGENERATION) {
 				creature->changeHealth(healthGain * 2); // Double regen from daily reward
 			} else {
 				creature->changeHealth(healthGain);
@@ -1205,10 +1205,10 @@ bool ConditionRegeneration::executeCondition(std::shared_ptr<Creature> creature,
 		}
 	}
 
-	if (creature->getZoneType() != ZONE_PROTECTION || PlayerdailyStreak >= DAILY_REWARD_MP_REGENERATION) {
+	if (creature->getZoneType() != ZONE_PROTECTION || dailyStreak >= DAILY_REWARD_MP_REGENERATION) {
 		if (internalManaTicks >= getManaTicks(creature)) {
 			internalManaTicks = 0;
-			if (creature->getZoneType() == ZONE_PROTECTION && PlayerdailyStreak >= DAILY_REWARD_DOUBLE_MP_REGENERATION) {
+			if (creature->getZoneType() == ZONE_PROTECTION && dailyStreak >= DAILY_REWARD_DOUBLE_MP_REGENERATION) {
 				creature->changeMana(manaGain * 2); // Double regen from daily reward
 			} else {
 				creature->changeMana(manaGain);
@@ -1248,7 +1248,7 @@ uint32_t ConditionRegeneration::getHealthTicks(std::shared_ptr<Creature> creatur
 	std::shared_ptr<Player> player = creature->getPlayer();
 
 	if (player != nullptr && isBuff) {
-		return healthTicks / g_configManager().getFloat(RATE_SPELL_COOLDOWN);
+		return healthTicks / g_configManager().getFloat(RATE_SPELL_COOLDOWN, __FUNCTION__);
 	}
 
 	return healthTicks;
@@ -1258,7 +1258,7 @@ uint32_t ConditionRegeneration::getManaTicks(std::shared_ptr<Creature> creature)
 	std::shared_ptr<Player> player = creature->getPlayer();
 
 	if (player != nullptr && isBuff) {
-		return manaTicks / g_configManager().getFloat(RATE_SPELL_COOLDOWN);
+		return manaTicks / g_configManager().getFloat(RATE_SPELL_COOLDOWN, __FUNCTION__);
 	}
 
 	return manaTicks;
@@ -1929,7 +1929,7 @@ bool ConditionFeared::getFleeDirection(std::shared_ptr<Creature> creature) {
 	return false;
 }
 
-bool ConditionFeared::getFleePath(std::shared_ptr<Creature> creature, const Position &pos, std::forward_list<Direction> &dirList) {
+bool ConditionFeared::getFleePath(std::shared_ptr<Creature> creature, const Position &pos, stdext::arraylist<Direction> &dirList) {
 	const std::vector<uint8_t> walkSize { 15, 9, 3, 1 };
 	bool found = false;
 	std::ptrdiff_t found_size = 0;
@@ -2030,7 +2030,7 @@ bool ConditionFeared::startCondition(std::shared_ptr<Creature> creature) {
 
 bool ConditionFeared::executeCondition(std::shared_ptr<Creature> creature, int32_t interval) {
 	Position currentPos = creature->getPosition();
-	std::forward_list<Direction> listDir;
+	stdext::arraylist<Direction> listDir(128);
 
 	g_logger().debug("[ConditionFeared::executeCondition] Executing condition, current position is {}", currentPos.toString());
 
@@ -2040,7 +2040,7 @@ bool ConditionFeared::executeCondition(std::shared_ptr<Creature> creature, int32
 		}
 
 		if (getFleePath(creature, currentPos, listDir)) {
-			g_dispatcher().addEvent(std::bind(&Game::forcePlayerAutoWalk, &g_game(), creature->getID(), listDir), "ConditionFeared::executeCondition");
+			g_dispatcher().addEvent(std::bind(&Game::forcePlayerAutoWalk, &g_game(), creature->getID(), listDir.data()), "ConditionFeared::executeCondition");
 			g_logger().debug("[ConditionFeared::executeCondition] Walking Scheduled");
 		}
 	}
@@ -2051,7 +2051,7 @@ bool ConditionFeared::executeCondition(std::shared_ptr<Creature> creature, int32
 void ConditionFeared::endCondition(std::shared_ptr<Creature> creature) {
 	creature->stopEventWalk();
 	/*
-	 * After a player is feared there's a 10 seconds before he can feared again.
+	 * After a player is feared there's a 10 seconds before they can can feared again.
 	 */
 	std::shared_ptr<Player> player = creature->getPlayer();
 	if (player) {
@@ -2085,8 +2085,9 @@ void ConditionSpeed::setFormulaVars(float NewMina, float NewMinb, float NewMaxa,
 }
 
 void ConditionSpeed::getFormulaValues(int32_t var, int32_t &min, int32_t &max) const {
-	min = (var * mina) + minb;
-	max = (var * maxa) + maxb;
+	int32_t difference = var - 40;
+	min = mina * difference + minb;
+	max = maxa * difference + maxb;
 }
 
 bool ConditionSpeed::setParam(ConditionParam_t param, int32_t value) {
@@ -2145,9 +2146,14 @@ bool ConditionSpeed::startCondition(std::shared_ptr<Creature> creature) {
 	}
 
 	if (speedDelta == 0) {
-		int32_t min, max;
-		getFormulaValues(creature->getBaseSpeed(), min, max);
-		speedDelta = uniform_random(min, max);
+		int32_t min;
+		int32_t max;
+		auto baseSpeed = creature->getBaseSpeed();
+		getFormulaValues(baseSpeed, min, max);
+		speedDelta = uniform_random(min, max) - baseSpeed;
+		if (conditionType == CONDITION_PARALYZE && speedDelta < 40 - baseSpeed) {
+			speedDelta = 40 - baseSpeed;
+		}
 	}
 
 	g_game().changeSpeed(creature, speedDelta);
@@ -2173,7 +2179,7 @@ void ConditionSpeed::addCondition(std::shared_ptr<Creature> creature, const std:
 
 	setTicks(addCondition->getTicks());
 
-	const std::shared_ptr<ConditionSpeed> &conditionSpeed = addCondition->static_self_cast<ConditionSpeed>();
+	const auto &conditionSpeed = addCondition->static_self_cast<ConditionSpeed>();
 	int32_t oldSpeedDelta = speedDelta;
 	speedDelta = conditionSpeed->speedDelta;
 	mina = conditionSpeed->mina;
@@ -2184,8 +2190,13 @@ void ConditionSpeed::addCondition(std::shared_ptr<Creature> creature, const std:
 	if (speedDelta == 0) {
 		int32_t min;
 		int32_t max;
-		getFormulaValues(creature->getBaseSpeed(), min, max);
-		speedDelta = uniform_random(min, max);
+		auto baseSpeed = creature->getBaseSpeed();
+		getFormulaValues(baseSpeed, min, max);
+		speedDelta = uniform_random(min, max) - baseSpeed;
+
+		if (conditionType == CONDITION_PARALYZE && speedDelta < 40 - baseSpeed) {
+			speedDelta = 40 - baseSpeed;
+		}
 	}
 
 	int32_t newSpeedChange = (speedDelta - oldSpeedDelta);
@@ -2257,7 +2268,7 @@ void ConditionOutfit::serialize(PropWriteStream &propWriteStream) {
 }
 
 bool ConditionOutfit::startCondition(std::shared_ptr<Creature> creature) {
-	if (g_configManager().getBoolean(WARN_UNSAFE_SCRIPTS) && outfit.lookType != 0 && !g_game().isLookTypeRegistered(outfit.lookType)) {
+	if (g_configManager().getBoolean(WARN_UNSAFE_SCRIPTS, __FUNCTION__) && outfit.lookType != 0 && !g_game().isLookTypeRegistered(outfit.lookType)) {
 		g_logger().warn("[ConditionOutfit::startCondition] An unregistered creature looktype type with id '{}' was blocked to prevent client crash.", outfit.lookType);
 		return false;
 	}
@@ -2289,7 +2300,7 @@ void ConditionOutfit::endCondition(std::shared_ptr<Creature> creature) {
 }
 
 void ConditionOutfit::addCondition(std::shared_ptr<Creature> creature, const std::shared_ptr<Condition> addCondition) {
-	if (g_configManager().getBoolean(WARN_UNSAFE_SCRIPTS) && outfit.lookType != 0 && !g_game().isLookTypeRegistered(outfit.lookType)) {
+	if (g_configManager().getBoolean(WARN_UNSAFE_SCRIPTS, __FUNCTION__) && outfit.lookType != 0 && !g_game().isLookTypeRegistered(outfit.lookType)) {
 		g_logger().warn("[ConditionOutfit::addCondition] An unregistered creature looktype type with id '{}' was blocked to prevent client crash.", outfit.lookType);
 		return;
 	}

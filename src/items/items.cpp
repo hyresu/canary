@@ -75,7 +75,7 @@ bool Items::reload() {
 void Items::loadFromProtobuf() {
 	using namespace Canary::protobuf::appearances;
 
-	bool supportAnimation = g_configManager().getBoolean(OLD_PROTOCOL);
+	bool supportAnimation = g_configManager().getBoolean(OLD_PROTOCOL, __FUNCTION__);
 	for (uint32_t it = 0; it < g_game().appearances.object_size(); ++it) {
 		Appearance object = g_game().appearances.object(it);
 
@@ -166,7 +166,7 @@ void Items::loadFromProtobuf() {
 			iType.wrapable = true;
 		}
 		iType.multiUse = object.flags().multiuse();
-		iType.moveable = object.flags().unmove() == false;
+		iType.movable = object.flags().unmove() == false;
 		iType.canReadText = (object.flags().has_lenshelp() && object.flags().lenshelp().id() == 1112) || (object.flags().has_write() && object.flags().write().max_text_length() != 0) || (object.flags().has_write_once() && object.flags().write_once().max_text_length_once() != 0);
 		iType.canReadText = object.flags().has_write() || object.flags().has_write_once();
 		iType.isVertical = object.flags().has_hook() && object.flags().hook().direction() == HOOK_TYPE_SOUTH;
@@ -192,7 +192,7 @@ void Items::loadFromProtobuf() {
 
 bool Items::loadFromXml() {
 	pugi::xml_document doc;
-	auto folder = g_configManager().getString(CORE_DIRECTORY) + "/items/items.xml";
+	auto folder = g_configManager().getString(CORE_DIRECTORY, __FUNCTION__) + "/items/items.xml";
 	pugi::xml_parse_result result = doc.load_file(folder.c_str());
 	if (!result) {
 		printXMLError(__FUNCTION__, folder, result);

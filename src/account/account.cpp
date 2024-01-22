@@ -36,7 +36,7 @@ namespace account {
 			return ERROR_NO;
 		}
 
-		if (!m_descriptor.empty() && accountRepository.loadByEmail(m_descriptor, m_account)) {
+		if (!m_descriptor.empty() && accountRepository.loadByEmailOrName(getProtocolCompat(), m_descriptor, m_account)) {
 			m_accLoaded = true;
 			return ERROR_NO;
 		}
@@ -170,8 +170,9 @@ namespace account {
 	}
 
 	void Account::addPremiumDays(const int32_t &days) {
-		auto timeLeft = static_cast<int32_t>((m_account.premiumLastDay - getTimeNow()) % 86400);
+		auto timeLeft = std::max(0, static_cast<int>((m_account.premiumLastDay - getTimeNow()) % 86400));
 		setPremiumDays(m_account.premiumRemainingDays + days);
+		m_account.premiumDaysPurchased += days;
 
 		if (timeLeft > 0) {
 			m_account.premiumLastDay += timeLeft;

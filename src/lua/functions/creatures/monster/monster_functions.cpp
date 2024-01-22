@@ -15,6 +15,7 @@
 #include "creatures/monsters/monsters.hpp"
 #include "lua/functions/creatures/monster/monster_functions.hpp"
 #include "map/spectators.hpp"
+#include "game/scheduling/events_scheduler.hpp"
 
 int MonsterFunctions::luaMonsterCreate(lua_State* L) {
 	// Monster(id or userdata)
@@ -219,11 +220,11 @@ int MonsterFunctions::luaMonsterGetFriendList(lua_State* L) {
 		return 1;
 	}
 
-	const auto friendList = monster->getFriendList();
+	const auto &friendList = monster->getFriendList();
 	lua_createtable(L, friendList.size(), 0);
 
 	int index = 0;
-	for (std::shared_ptr<Creature> creature : friendList) {
+	for (const auto &creature : friendList) {
 		pushUserdata<Creature>(L, creature);
 		setCreatureMetatable(L, -1, creature);
 		lua_rawseti(L, -2, ++index);
@@ -350,19 +351,22 @@ int MonsterFunctions::luaMonsterSearchTarget(lua_State* L) {
 }
 
 int MonsterFunctions::luaMonsterSetSpawnPosition(lua_State* L) {
-	// monster:setSpawnPosition()
+	// monster:setSpawnPosition(interval)
 	std::shared_ptr<Monster> monster = getUserdataShared<Monster>(L, 1);
 	if (!monster) {
 		lua_pushnil(L);
 		return 1;
 	}
 
+	uint32_t eventschedule = g_eventsScheduler().getSpawnMonsterSchedule();
+
 	const Position &pos = monster->getPosition();
 	monster->setMasterPos(pos);
 
 	g_game().map.spawnsMonster.getspawnMonsterList().emplace_front(pos, 5);
 	SpawnMonster &spawnMonster = g_game().map.spawnsMonster.getspawnMonsterList().front();
-	spawnMonster.addMonster(monster->mType->name, pos, DIRECTION_NORTH, 60000);
+	uint32_t interval = getNumber<uint32_t>(L, 2, 90) * 1000 * 100 / std::max((uint32_t)1, (g_configManager().getNumber(RATE_SPAWN, __FUNCTION__) * eventschedule));
+	spawnMonster.addMonster(monster->mType->typeName, pos, DIRECTION_NORTH, static_cast<uint32_t>(interval));
 	spawnMonster.startSpawnMonsterCheck();
 
 	pushBoolean(L, true);
@@ -585,7 +589,24 @@ int MonsterFunctions::luaMonsterHazardDamageBoost(lua_State* L) {
 			pushBoolean(L, monster->getHazardSystemDamageBoost());
 		} else {
 			monster->setHazardSystemDamageBoost(hazardDamageBoost);
-			pushBoolean(L, monster->getHazardSystemCrit());
+			pushBoolean(L, monster->getHazardSystemDamageBoost());
+		}
+	} else {
+		lua_pushnil(L);
+	}
+	return 1;
+}
+
+int MonsterFunctions::luaMonsterHazardDefenseBoost(lua_State* L) {
+	// get: monster:hazardDefenseBoost() ; set: monster:hazardDefenseBoost(hazardDefenseBoost)
+	std::shared_ptr<Monster> monster = getUserdataShared<Monster>(L, 1);
+	bool hazardDefenseBoost = getBoolean(L, 2, false);
+	if (monster) {
+		if (lua_gettop(L) == 1) {
+			pushBoolean(L, monster->getHazardSystemDefenseBoost());
+		} else {
+			monster->setHazardSystemDefenseBoost(hazardDefenseBoost);
+			pushBoolean(L, monster->getHazardSystemDefenseBoost());
 		}
 	} else {
 		lua_pushnil(L);

@@ -15,6 +15,7 @@
 #include "game/game.hpp"
 #include "creatures/monsters/monster.hpp"
 #include "creatures/players/wheel/player_wheel.hpp"
+#include "lib/metrics/metrics.hpp"
 
 bool IOLoginData::gameWorldAuthentication(const std::string &accountDescriptor, const std::string &password, std::string &characterName, uint32_t &accountId, bool oldProtocol) {
 	account::Account account(accountDescriptor);
@@ -25,7 +26,7 @@ bool IOLoginData::gameWorldAuthentication(const std::string &accountDescriptor, 
 		return false;
 	}
 
-	if (g_configManager().getString(AUTH_TYPE) == "session") {
+	if (g_configManager().getString(AUTH_TYPE, __FUNCTION__) == "session") {
 		if (!account.authenticate()) {
 			return false;
 		}
@@ -74,31 +75,33 @@ void IOLoginData::updateOnlineStatus(uint32_t guid, bool login) {
 
 	std::ostringstream query;
 	if (login) {
+		g_metrics().addUpDownCounter("players_online", 1);
 		query << "INSERT INTO `players_online` VALUES (" << guid << ')';
 		updateOnline[guid] = true;
 	} else {
+		g_metrics().addUpDownCounter("players_online", -1);
 		query << "DELETE FROM `players_online` WHERE `player_id` = " << guid;
 		updateOnline.erase(guid);
 	}
 	Database::getInstance().executeQuery(query.str());
 }
 
-// The boolean "disable" will desactivate the loading of information that is not relevant to the preload, for example, forge, bosstiary, etc. None of this we need to access if the player is offline
-bool IOLoginData::loadPlayerById(std::shared_ptr<Player> player, uint32_t id, bool disable /* = true*/) {
+// The boolean "disableIrrelevantInfo" will deactivate the loading of information that is not relevant to the preload, for example, forge, bosstiary, etc. None of this we need to access if the player is offline
+bool IOLoginData::loadPlayerById(std::shared_ptr<Player> player, uint32_t id, bool disableIrrelevantInfo /* = true*/) {
 	Database &db = Database::getInstance();
 	std::ostringstream query;
 	query << "SELECT * FROM `players` WHERE `id` = " << id;
-	return loadPlayer(player, db.storeQuery(query.str()), disable);
+	return loadPlayer(player, db.storeQuery(query.str()), disableIrrelevantInfo);
 }
 
-bool IOLoginData::loadPlayerByName(std::shared_ptr<Player> player, const std::string &name, bool disable /* = true*/) {
+bool IOLoginData::loadPlayerByName(std::shared_ptr<Player> player, const std::string &name, bool disableIrrelevantInfo /* = true*/) {
 	Database &db = Database::getInstance();
 	std::ostringstream query;
 	query << "SELECT * FROM `players` WHERE `name` = " << db.escapeString(name);
-	return loadPlayer(player, db.storeQuery(query.str()), disable);
+	return loadPlayer(player, db.storeQuery(query.str()), disableIrrelevantInfo);
 }
 
-bool IOLoginData::loadPlayer(std::shared_ptr<Player> player, DBResult_ptr result, bool disable /* = false*/) {
+bool IOLoginData::loadPlayer(std::shared_ptr<Player> player, DBResult_ptr result, bool disableIrrelevantInfo /* = false*/) {
 	if (!result || !player) {
 		std::string nullptrType = !result ? "Result" : "Player";
 		g_logger().warn("[{}] - {} is nullptr", __FUNCTION__, nullptrType);
@@ -165,6 +168,10 @@ bool IOLoginData::loadPlayer(std::shared_ptr<Player> player, DBResult_ptr result
 
 		// Load task hunting class
 		IOLoginDataLoad::loadPlayerTaskHuntingClass(player, result);
+
+		if (disableIrrelevantInfo) {
+			return true;
+		}
 
 		// load forge history
 		IOLoginDataLoad::loadPlayerForgeHistory(player, result);

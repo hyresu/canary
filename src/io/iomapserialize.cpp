@@ -46,11 +46,21 @@ void IOMapSerialize::loadHouseItems(Map* map) {
 		}
 
 		while (item_count--) {
+			if (auto houseTile = std::dynamic_pointer_cast<HouseTile>(tile)) {
+				const auto house = houseTile->getHouse();
+				if (house->getOwner() == 0) {
+					g_logger().trace("Skipping load item from house id: {}, position: {}, house does not have owner", house->getId(), house->getEntryPosition().toString());
+					house->clearHouseInfo(false);
+					continue;
+				}
+			}
+
 			loadItem(propStream, tile, true);
 		}
 	} while (result->next());
 	g_logger().info("Loaded house items in {} milliseconds", bm_context.duration());
 }
+
 bool IOMapSerialize::saveHouseItems() {
 	bool success = DBTransaction::executeWithinTransaction([]() {
 		return SaveHouseItemsGuard();
@@ -116,8 +126,6 @@ bool IOMapSerialize::loadContainer(PropStream &propStream, std::shared_ptr<Conta
 	return true;
 }
 
-uint32_t NEW_BEDS_START_ID = 30000;
-
 bool IOMapSerialize::loadItem(PropStream &propStream, std::shared_ptr<Cylinder> parent, bool isHouseItem /*= false*/) {
 	uint16_t id;
 	if (!propStream.read<uint16_t>(id)) {
@@ -130,14 +138,16 @@ bool IOMapSerialize::loadItem(PropStream &propStream, std::shared_ptr<Cylinder> 
 	}
 
 	const ItemType &iType = Item::items[id];
-	if (isHouseItem && iType.isBed() && id < NEW_BEDS_START_ID) {
-		return false;
-	}
-	if (iType.moveable || !tile || iType.isCarpet() || iType.isBed()) {
+	if (iType.isBed() || iType.movable || !tile || iType.isCarpet() || iType.isTrashHolder()) {
 		// create a new item
-		std::shared_ptr<Item> item = Item::CreateItem(id);
+		auto item = Item::CreateItem(id);
 		if (item) {
 			if (item->unserializeAttr(propStream)) {
+				// Remove only not movable and not sleeper bed
+				auto bed = item->getBed();
+				if (isHouseItem && iType.isBed() && bed && bed->getSleeper() == 0 && !iType.movable) {
+					return false;
+				}
 				std::shared_ptr<Container> container = item->getContainer();
 				if (container && !loadContainer(propStream, container)) {
 					return false;
@@ -269,12 +279,12 @@ bool IOMapSerialize::loadHouseInfo() {
 
 	do {
 		auto houseId = result->getNumber<uint32_t>("id");
-		const auto &house = g_game().map.houses.getHouse(houseId);
+		const auto house = g_game().map.houses.getHouse(houseId);
 		if (house) {
 			uint32_t owner = result->getNumber<uint32_t>("owner");
 			int32_t newOwner = result->getNumber<int32_t>("new_owner");
 			// Transfer house owner
-			auto isTransferOnRestart = g_configManager().getBoolean(TOGGLE_HOUSE_TRANSFER_ON_SERVER_RESTART);
+			auto isTransferOnRestart = g_configManager().getBoolean(TOGGLE_HOUSE_TRANSFER_ON_SERVER_RESTART, __FUNCTION__);
 			if (isTransferOnRestart && newOwner >= 0) {
 				g_game().setTransferPlayerHouseItems(houseId, owner);
 				if (newOwner == 0) {

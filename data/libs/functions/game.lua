@@ -58,18 +58,6 @@ function Game.getHouseByPlayerGUID(playerGUID)
 	return nil
 end
 
-function Game.getPlayersByAccountNumber(accountNumber)
-	local result = {}
-	local players, player = Game.getPlayers()
-	for i = 1, #players do
-		player = players[i]
-		if player:getAccountId() == accountNumber then
-			result[#result + 1] = player
-		end
-	end
-	return result
-end
-
 function Game.getPlayersByIPAddress(ip, mask)
 	if not mask then
 		mask = 0xFFFFFFFF
@@ -138,7 +126,7 @@ function Game.setStorageValue(key, value)
 
 	if value == -1 then
 		if globalStorageTable[key] then
-			table.remove(globalStorageTable, key)
+			globalStorageTable[key] = nil
 		end
 		return
 	end

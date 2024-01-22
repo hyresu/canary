@@ -25,6 +25,8 @@ std::string generateToken(const std::string &secret, uint32_t ticks);
 void replaceString(std::string &str, const std::string &sought, const std::string &replacement);
 void trim_right(std::string &source, char t);
 void trim_left(std::string &source, char t);
+std::string keepFirstWordOnly(std::string &str);
+
 void toLowerCaseString(std::string &source);
 std::string asLowerCaseString(std::string source);
 std::string asUpperCaseString(std::string source);
@@ -70,8 +72,8 @@ std::string formatTime(time_t time);
  */
 std::string formatEnumName(std::string_view name);
 std::time_t getTimeNow();
-std::time_t getTimeMsNow();
-std::time_t getTimeUsNow();
+int64_t getTimeMsNow();
+int64_t getTimeUsNow();
 std::string convertIPToString(uint32_t ip);
 
 void trimString(std::string &str);
@@ -133,6 +135,7 @@ bool isCaskItem(uint16_t itemId);
 std::string getObjectCategoryName(ObjectCategory_t category);
 
 int64_t OTSYS_TIME();
+void UPDATE_OTSYS_TIME();
 
 SpellGroup_t stringToSpellGroup(const std::string &value);
 
@@ -188,3 +191,9 @@ std::string getPlayerReflexivePronoun(PlayerPronoun_t pronoun, PlayerSex_t sex, 
 std::string getVerbForPronoun(PlayerPronoun_t pronoun, bool pastTense = false);
 
 std::string toKey(const std::string &str);
+
+static inline double quadraticPoly(double a, double b, double c, double x) {
+	return a * x * x + b * x + c;
+}
+
+uint8_t convertWheelGemAffinityToDomain(uint8_t affinity);

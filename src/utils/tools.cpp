@@ -257,6 +257,15 @@ void trim_left(std::string &source, char t) {
 	source.erase(0, source.find_first_not_of(t));
 }
 
+std::string keepFirstWordOnly(std::string &str) {
+	size_t spacePos = str.find(' ');
+	if (spacePos != std::string::npos) {
+		str.erase(spacePos);
+	}
+
+	return str;
+}
+
 void toLowerCaseString(std::string &source) {
 	std::transform(source.begin(), source.end(), source.begin(), tolower);
 }
@@ -398,23 +407,13 @@ int32_t uniform_random(int32_t minNumber, int32_t maxNumber) {
 
 int32_t normal_random(int32_t minNumber, int32_t maxNumber) {
 	static std::normal_distribution<float> normalRand(0.5f, 0.25f);
-	if (minNumber == maxNumber) {
-		return minNumber;
-	} else if (minNumber > maxNumber) {
-		std::swap(minNumber, maxNumber);
-	}
+	float v;
+	do {
+		v = normalRand(getRandomGenerator());
+	} while (v < 0.0 || v > 1.0);
 
-	int32_t increment;
-	const int32_t diff = maxNumber - minNumber;
-	const float v = normalRand(getRandomGenerator());
-	if (v < 0.0) {
-		increment = diff / 2;
-	} else if (v > 1.0) {
-		increment = (diff + 1) / 2;
-	} else {
-		increment = round(v * diff);
-	}
-	return minNumber + increment;
+	auto &&[a, b] = std::minmax(minNumber, maxNumber);
+	return a + std::lround(v * (b - a));
 }
 
 bool boolean_random(double probability /* = 0.5*/) {
@@ -471,12 +470,12 @@ std::time_t getTimeNow() {
 	return std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 }
 
-std::time_t getTimeMsNow() {
+int64_t getTimeMsNow() {
 	auto duration = std::chrono::system_clock::now().time_since_epoch();
 	return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 }
 
-std::time_t getTimeUsNow() {
+int64_t getTimeUsNow() {
 	auto duration = std::chrono::system_clock::now().time_since_epoch();
 	return std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
 }
@@ -1210,7 +1209,7 @@ const char* getReturnMessage(ReturnValue value) {
 		case RETURNVALUE_DESTINATIONOUTOFREACH:
 			return "Destination is out of reach.";
 
-		case RETURNVALUE_NOTMOVEABLE:
+		case RETURNVALUE_NOTMOVABLE:
 			return "You cannot move this object.";
 
 		case RETURNVALUE_DROPTWOHANDEDITEM:
@@ -1449,14 +1448,25 @@ const char* getReturnMessage(ReturnValue value) {
 		case RETURNVALUE_CONTACTADMINISTRATOR:
 			return "An error has occurred, please contact your administrator.";
 
+		case RETURNVALUE_ITEMISNOTYOURS:
+			return "This item is not yours.";
+
+		case RETURNVALUE_ITEMUNTRADEABLE:
+			return "This item is untradeable.";
+
 		// Any unhandled ReturnValue will go enter here
 		default:
 			return "Unknown error.";
 	}
 }
 
+int64_t OTSYSTIME = 0;
+void UPDATE_OTSYS_TIME() {
+	OTSYSTIME = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
 int64_t OTSYS_TIME() {
-	return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	return OTSYSTIME;
 }
 
 SpellGroup_t stringToSpellGroup(const std::string &value) {
@@ -1521,7 +1531,7 @@ NameEval_t validateName(const std::string &name) {
 	std::istream_iterator<std::string> end;
 	std::copy(begin, end, std::back_inserter(toks));
 
-	if (name.length() < 3 || name.length() > 14) {
+	if (name.length() < 3 || name.length() > 18) {
 		return INVALID_LENGTH;
 	}
 
@@ -1594,8 +1604,6 @@ std::string getObjectCategoryName(ObjectCategory_t category) {
 			return "Tibia Coins";
 		case OBJECTCATEGORY_CREATUREPRODUCTS:
 			return "Creature Products";
-		case OBJECTCATEGORY_STASHRETRIEVE:
-			return "Stash Retrieve";
 		case OBJECTCATEGORY_GOLD:
 			return "Gold";
 		case OBJECTCATEGORY_DEFAULT:
@@ -1798,4 +1806,20 @@ std::string toKey(const std::string &str) {
 	std::replace(key.begin(), key.end(), ' ', '-');
 	key.erase(std::remove_if(key.begin(), key.end(), [](char c) { return std::isspace(c); }), key.end());
 	return key;
+}
+
+uint8_t convertWheelGemAffinityToDomain(uint8_t affinity) {
+	switch (affinity) {
+		case 0:
+			return 1;
+		case 1:
+			return 3;
+		case 2:
+			return 0;
+		case 3:
+			return 2;
+		default:
+			g_logger().error("Failed to get gem affinity {}", affinity);
+			return 0;
+	}
 }

@@ -14,9 +14,11 @@
 ---@field private playerPositions {pos: Position, teleport: Position}[]
 ---@field private area {from: Position, to: Position}
 ---@field private monsters {name: string, pos: Position}[]
+---@field private exitTeleporter Position
 ---@field private exit Position
 ---@field private encounter Encounter
 ---@field private timeoutEvent Event
+---@field private disableCooldown boolean
 BossLever = {}
 
 --[[
@@ -59,15 +61,17 @@ setmetatable(BossLever, {
 			bossPosition = boss.position,
 			timeToFightAgain = config.timeToFightAgain or configManager.getNumber(configKeys.BOSS_DEFAULT_TIME_TO_FIGHT_AGAIN),
 			timeToDefeat = config.timeToDefeat or configManager.getNumber(configKeys.BOSS_DEFAULT_TIME_TO_DEFEAT),
-			timeAfterKill = config.timeAfterKill or 0,
+			timeAfterKill = config.timeAfterKill or 60,
 			requiredLevel = config.requiredLevel or 0,
 			createBoss = boss.createFunction,
 			disabled = config.disabled,
 			playerPositions = config.playerPositions,
 			onUseExtra = config.onUseExtra or function() end,
+			exitTeleporter = config.exitTeleporter,
 			exit = config.exit,
 			area = config.specPos,
 			monsters = config.monsters or {},
+			disableCooldown = config.disableCooldown,
 			_position = nil,
 			_uid = nil,
 			_aid = nil,
@@ -111,7 +115,7 @@ end
 ---@param player Player
 ---@return number
 function BossLever:lastEncounterTime(player)
-	if not player then
+	if not player or self.disableCooldown then
 		return 0
 	end
 	return player:getBossCooldown(self.name)
@@ -142,7 +146,7 @@ end
 function BossLever:onUse(player)
 	local isParticipant = false
 	for _, v in ipairs(self.playerPositions) do
-		if v.pos == player:getPosition() then
+		if Position(v.pos) == player:getPosition() then
 			isParticipant = true
 		end
 	end
@@ -179,7 +183,8 @@ function BossLever:onUse(player)
 			for _, v in pairs(info) do
 				local newPlayer = v.creature
 				if newPlayer then
-					newPlayer:sendTextMessage(MESSAGE_EVENT_ADVANCE, "You or a member in your team have to wait " .. self.timeToFightAgain / 60 / 60 .. " hours to face " .. self.name .. " again!")
+					local timeLeft = self:lastEncounterTime(newPlayer) - os.time()
+					newPlayer:sendTextMessage(MESSAGE_EVENT_ADVANCE, "You or a member in your team have to wait " .. getTimeInWords(timeLeft) .. " to face " .. self.name .. " again!")
 					if self:lastEncounterTime(newPlayer) > os.time() then
 						newPlayer:getPosition():sendMagicEffect(CONST_ME_POFF)
 					end
@@ -212,6 +217,7 @@ function BossLever:onUse(player)
 		lever:teleportPlayers()
 		if self.encounter then
 			local encounter = Encounter(self.encounter)
+			encounter:reset()
 			encounter:start()
 		end
 		self:setLastEncounterTime(os.time() + self.timeToFightAgain)
@@ -219,9 +225,9 @@ function BossLever:onUse(player)
 			stopEvent(self.timeoutEvent)
 			self.timeoutEvent = nil
 		end
-		self.timeoutEvent = addEvent(function(zone)
-			zone:refresh()
-			zone:removePlayers()
+		self.timeoutEvent = addEvent(function(zn)
+			zn:refresh()
+			zn:removePlayers()
 		end, self.timeToDefeat * 1000, zone)
 	end
 	return true
@@ -278,5 +284,9 @@ function BossLever:register()
 	end
 	action:register()
 	BossLever[self.name] = self
+
+	if self.exitTeleporter then
+		SimpleTeleport(self.exitTeleporter, self.exit)
+	end
 	return true
 end

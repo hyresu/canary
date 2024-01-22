@@ -26,18 +26,34 @@ auto real_nullptr_tile = std::make_shared<StaticTile>(0xFFFF, 0xFFFF, 0xFF);
 const std::shared_ptr<Tile> &Tile::nullptr_tile = real_nullptr_tile;
 
 bool Tile::hasProperty(ItemProperty prop) const {
-	if (ground && ground->hasProperty(prop)) {
-		return true;
+	switch (prop) {
+		case CONST_PROP_BLOCKSOLID:
+			return hasFlag(TILESTATE_BLOCKSOLID);
+		case CONST_PROP_HASHEIGHT:
+			return hasFlag(TILESTATE_HASHEIGHT);
+		case CONST_PROP_BLOCKPROJECTILE:
+			return hasFlag(TILESTATE_BLOCKPROJECTILE);
+		case CONST_PROP_BLOCKPATH:
+			return hasFlag(TILESTATE_BLOCKPATH);
+		case CONST_PROP_ISVERTICAL:
+			return hasFlag(TILESTATE_ISVERTICAL);
+		case CONST_PROP_ISHORIZONTAL:
+			return hasFlag(TILESTATE_ISHORIZONTAL);
+		case CONST_PROP_MOVABLE:
+			return hasFlag(TILESTATE_MOVABLE);
+		case CONST_PROP_IMMOVABLEBLOCKSOLID:
+			return hasFlag(TILESTATE_IMMOVABLEBLOCKSOLID);
+		case CONST_PROP_IMMOVABLEBLOCKPATH:
+			return hasFlag(TILESTATE_IMMOVABLEBLOCKPATH);
+		case CONST_PROP_IMMOVABLENOFIELDBLOCKPATH:
+			return hasFlag(TILESTATE_IMMOVABLENOFIELDBLOCKPATH);
+		case CONST_PROP_NOFIELDBLOCKPATH:
+			return hasFlag(TILESTATE_NOFIELDBLOCKPATH);
+		case CONST_PROP_SUPPORTHANGABLE:
+			return hasFlag(TILESTATE_SUPPORTS_HANGABLE);
+		default:
+			return false;
 	}
-
-	if (const TileItemVector* items = getItemList()) {
-		for (auto &item : *items) {
-			if (item->hasProperty(prop)) {
-				return true;
-			}
-		}
-	}
-	return false;
 }
 
 bool Tile::hasProperty(std::shared_ptr<Item> exclude, ItemProperty prop) const {
@@ -49,6 +65,10 @@ bool Tile::hasProperty(std::shared_ptr<Item> exclude, ItemProperty prop) const {
 
 	if (const TileItemVector* items = getItemList()) {
 		for (auto &item : *items) {
+			if (!item) {
+				g_logger().error("Tile::hasProperty: tile {} has an item which is nullptr", tilePos.toString());
+				continue;
+			}
 			if (item != exclude && item->hasProperty(prop)) {
 				return true;
 			}
@@ -337,7 +357,7 @@ std::shared_ptr<Thing> Tile::getTopVisibleThing(std::shared_ptr<Creature> creatu
 }
 
 void Tile::onAddTileItem(std::shared_ptr<Item> item) {
-	if ((item->hasProperty(CONST_PROP_MOVEABLE) || item->getContainer()) || (item->isWrapable() && !item->hasProperty(CONST_PROP_MOVEABLE) && !item->hasProperty(CONST_PROP_BLOCKPATH))) {
+	if ((item->hasProperty(CONST_PROP_MOVABLE) || item->getContainer()) || (item->isWrapable() && !item->hasProperty(CONST_PROP_MOVABLE) && !item->hasProperty(CONST_PROP_BLOCKPATH))) {
 		auto it = g_game().browseFields.find(static_self_cast<Tile>());
 		if (it != g_game().browseFields.end()) {
 			auto lockedCylinder = it->second.lock();
@@ -366,14 +386,14 @@ void Tile::onAddTileItem(std::shared_ptr<Item> item) {
 		spectator->onAddTileItem(static_self_cast<Tile>(), cylinderMapPos);
 	}
 
-	if ((!hasFlag(TILESTATE_PROTECTIONZONE) || g_configManager().getBoolean(CLEAN_PROTECTION_ZONES))
+	if ((!hasFlag(TILESTATE_PROTECTIONZONE) || g_configManager().getBoolean(CLEAN_PROTECTION_ZONES, __FUNCTION__))
 		&& item->isCleanable()) {
 		if (!this->getHouse()) {
 			g_game().addTileToClean(static_self_cast<Tile>());
 		}
 	}
 
-	if (item->isCarpet() && !item->isMoveable()) {
+	if (item->isCarpet() && !item->isMovable()) {
 		if (getTopTopItem() && getTopTopItem()->canReceiveAutoCarpet()) {
 			return;
 		}
@@ -410,7 +430,7 @@ void Tile::onAddTileItem(std::shared_ptr<Item> item) {
 }
 
 void Tile::onUpdateTileItem(std::shared_ptr<Item> oldItem, const ItemType &oldType, std::shared_ptr<Item> newItem, const ItemType &newType) {
-	if ((newItem->hasProperty(CONST_PROP_MOVEABLE) || newItem->getContainer()) || (newItem->isWrapable() && newItem->hasProperty(CONST_PROP_MOVEABLE) && !oldItem->hasProperty(CONST_PROP_BLOCKPATH))) {
+	if ((newItem->hasProperty(CONST_PROP_MOVABLE) || newItem->getContainer()) || (newItem->isWrapable() && newItem->hasProperty(CONST_PROP_MOVABLE) && !oldItem->hasProperty(CONST_PROP_BLOCKPATH))) {
 		auto it = g_game().browseFields.find(getTile());
 		if (it != g_game().browseFields.end()) {
 			auto lockedCylinder = it->second.lock();
@@ -422,7 +442,7 @@ void Tile::onUpdateTileItem(std::shared_ptr<Item> oldItem, const ItemType &oldTy
 				}
 			}
 		}
-	} else if ((oldItem->hasProperty(CONST_PROP_MOVEABLE) || oldItem->getContainer()) || (oldItem->isWrapable() && !oldItem->hasProperty(CONST_PROP_MOVEABLE) && !oldItem->hasProperty(CONST_PROP_BLOCKPATH))) {
+	} else if ((oldItem->hasProperty(CONST_PROP_MOVABLE) || oldItem->getContainer()) || (oldItem->isWrapable() && !oldItem->hasProperty(CONST_PROP_MOVABLE) && !oldItem->hasProperty(CONST_PROP_BLOCKPATH))) {
 		auto it = g_game().browseFields.find(getTile());
 		if (it != g_game().browseFields.end()) {
 			auto lockedCylinder = it->second.lock();
@@ -452,7 +472,7 @@ void Tile::onUpdateTileItem(std::shared_ptr<Item> oldItem, const ItemType &oldTy
 }
 
 void Tile::onRemoveTileItem(const CreatureVector &spectators, const std::vector<int32_t> &oldStackPosVector, std::shared_ptr<Item> item) {
-	if ((item->hasProperty(CONST_PROP_MOVEABLE) || item->getContainer()) || (item->isWrapable() && !item->hasProperty(CONST_PROP_MOVEABLE) && !item->hasProperty(CONST_PROP_BLOCKPATH))) {
+	if ((item->hasProperty(CONST_PROP_MOVABLE) || item->getContainer()) || (item->isWrapable() && !item->hasProperty(CONST_PROP_MOVABLE) && !item->hasProperty(CONST_PROP_BLOCKPATH))) {
 		auto it = g_game().browseFields.find(getTile());
 		if (it != g_game().browseFields.end()) {
 			auto lockedCylinder = it->second.lock();
@@ -483,7 +503,7 @@ void Tile::onRemoveTileItem(const CreatureVector &spectators, const std::vector<
 		spectator->onRemoveTileItem(static_self_cast<Tile>(), cylinderMapPos, iType, item);
 	}
 
-	if (!hasFlag(TILESTATE_PROTECTIONZONE) || g_configManager().getBoolean(CLEAN_PROTECTION_ZONES)) {
+	if (!hasFlag(TILESTATE_PROTECTIONZONE) || g_configManager().getBoolean(CLEAN_PROTECTION_ZONES, __FUNCTION__)) {
 		auto items = getItemList();
 		if (!items || items->empty()) {
 			g_game().removeTileToClean(static_self_cast<Tile>());
@@ -503,7 +523,7 @@ void Tile::onRemoveTileItem(const CreatureVector &spectators, const std::vector<
 		}
 	}
 
-	if (item->isCarpet() && !item->isMoveable()) {
+	if (item->isCarpet() && !item->isMovable()) {
 		if (getTopTopItem() && getTopTopItem()->canReceiveAutoCarpet()) {
 			return;
 		}
@@ -652,6 +672,27 @@ ReturnValue Tile::queryAdd(int32_t, const std::shared_ptr<Thing> &thing, uint32_
 			}
 
 			const auto playerTile = player->getTile();
+			// moving from a pz tile to a non-pz tile
+			if (playerTile && playerTile->hasFlag(TILESTATE_PROTECTIONZONE)) {
+				auto maxOnline = g_configManager().getNumber(MAX_PLAYERS_PER_ACCOUNT, __FUNCTION__);
+				if (maxOnline > 1 && player->getAccountType() < account::ACCOUNT_TYPE_GAMEMASTER && !hasFlag(TILESTATE_PROTECTIONZONE)) {
+					auto maxOutsizePZ = g_configManager().getNumber(MAX_PLAYERS_OUTSIDE_PZ_PER_ACCOUNT, __FUNCTION__);
+					auto accountPlayers = g_game().getPlayersByAccount(player->getAccount());
+					int countOutsizePZ = 0;
+					for (const auto &accountPlayer : accountPlayers) {
+						if (accountPlayer == player || accountPlayer->isOffline()) {
+							continue;
+						}
+						if (accountPlayer->getTile() && !accountPlayer->getTile()->hasFlag(TILESTATE_PROTECTIONZONE)) {
+							++countOutsizePZ;
+						}
+					}
+					if (countOutsizePZ >= maxOutsizePZ) {
+						player->sendCreatureSay(player, TALKTYPE_MONSTER_SAY, fmt::format("You can only have {} character{} from your account outside of a protection zone.", maxOutsizePZ == 1 ? "one" : std::to_string(maxOutsizePZ), maxOutsizePZ > 1 ? "s" : ""), &getPosition());
+						return RETURNVALUE_NOTPOSSIBLE;
+					}
+				}
+			}
 			if (playerTile && player->isPzLocked()) {
 				if (!playerTile->hasFlag(TILESTATE_PVPZONE)) {
 					// player is trying to enter a pvp zone while being pz-locked
@@ -698,7 +739,7 @@ ReturnValue Tile::queryAdd(int32_t, const std::shared_ptr<Thing> &thing, uint32_
 			// FLAG_IGNOREBLOCKITEM is set
 			if (ground) {
 				const ItemType &iiType = Item::items[ground->getID()];
-				if (iiType.blockSolid && (!iiType.moveable || ground->hasAttribute(ItemAttribute_t::UNIQUEID))) {
+				if (iiType.blockSolid && (!iiType.movable || ground->hasAttribute(ItemAttribute_t::UNIQUEID))) {
 					return RETURNVALUE_NOTPOSSIBLE;
 				}
 			}
@@ -706,7 +747,7 @@ ReturnValue Tile::queryAdd(int32_t, const std::shared_ptr<Thing> &thing, uint32_
 			if (const auto items = getItemList()) {
 				for (auto &item : *items) {
 					const ItemType &iiType = Item::items[item->getID()];
-					if (iiType.blockSolid && (!iiType.moveable || item->hasAttribute(ItemAttribute_t::UNIQUEID))) {
+					if (iiType.blockSolid && (!iiType.movable || item->hasAttribute(ItemAttribute_t::UNIQUEID))) {
 						return RETURNVALUE_NOTPOSSIBLE;
 					}
 				}
@@ -813,14 +854,14 @@ ReturnValue Tile::queryRemove(const std::shared_ptr<Thing> &thing, uint32_t coun
 		return RETURNVALUE_NOTPOSSIBLE;
 	}
 
-	if (!item->isMoveable() && !hasBitSet(FLAG_IGNORENOTMOVEABLE, tileFlags)) {
-		return RETURNVALUE_NOTMOVEABLE;
+	if (!item->isMovable() && !hasBitSet(FLAG_IGNORENOTMOVABLE, tileFlags)) {
+		return RETURNVALUE_NOTMOVABLE;
 	}
 
 	return RETURNVALUE_NOERROR;
 }
 
-std::shared_ptr<Cylinder> Tile::queryDestination(int32_t &, const std::shared_ptr<Thing> &, std::shared_ptr<Item>* destItem, uint32_t &tileFlags) {
+std::shared_ptr<Cylinder> Tile::queryDestination(int32_t &, const std::shared_ptr<Thing> &thing, std::shared_ptr<Item>* destItem, uint32_t &tileFlags) {
 	std::shared_ptr<Tile> destTile = nullptr;
 	*destItem = nullptr;
 
@@ -911,6 +952,12 @@ std::shared_ptr<Cylinder> Tile::queryDestination(int32_t &, const std::shared_pt
 		std::shared_ptr<Thing> destThing = destTile->getTopDownItem();
 		if (destThing) {
 			*destItem = destThing->getItem();
+			if (thing->getItem()) {
+				auto destCylinder = destThing->getCylinder();
+				if (destCylinder && !destCylinder->getContainer()) {
+					return destThing->getCylinder();
+				}
+			}
 		}
 	}
 	return destTile;
@@ -943,6 +990,7 @@ void Tile::addThing(int32_t, std::shared_ptr<Thing> thing) {
 	if (creature) {
 		Spectators::clearCache();
 		creature->setParent(static_self_cast<Tile>());
+
 		CreatureVector* creatures = makeCreatures();
 		creatures->insert(creatures->begin(), creature);
 	} else {
@@ -1525,11 +1573,12 @@ void Tile::internalAddThing(uint32_t, std::shared_ptr<Thing> thing) {
 		zone->thingAdded(thing);
 	}
 
-	thing->setParent(static_self_cast<Tile>());
+	thing->setParent(getTile());
 
 	std::shared_ptr<Creature> creature = thing->getCreature();
 	if (creature) {
 		Spectators::clearCache();
+
 		CreatureVector* creatures = makeCreatures();
 		creatures->insert(creatures->begin(), creature);
 	} else {
@@ -1574,14 +1623,14 @@ void Tile::internalAddThing(uint32_t, std::shared_ptr<Thing> thing) {
 	}
 }
 
-void Tile::updateTileFlags(std::shared_ptr<Item> item) {
+void Tile::updateTileFlags(const std::shared_ptr<Item> &item) {
 	resetTileFlags(item);
 	setTileFlags(item);
 }
 
-void Tile::setTileFlags(std::shared_ptr<Item> item) {
+void Tile::setTileFlags(const std::shared_ptr<Item> &item) {
 	if (!hasFlag(TILESTATE_FLOORCHANGE)) {
-		const ItemType &it = Item::items[item->getID()];
+		const auto &it = Item::items[item->getID()];
 		if (it.floorChange != 0) {
 			setFlag(it.floorChange);
 		}
@@ -1601,6 +1650,10 @@ void Tile::setTileFlags(std::shared_ptr<Item> item) {
 
 	if (item->hasProperty(CONST_PROP_IMMOVABLENOFIELDBLOCKPATH)) {
 		setFlag(TILESTATE_IMMOVABLENOFIELDBLOCKPATH);
+	}
+
+	if (item->hasProperty(CONST_PROP_SUPPORTHANGABLE)) {
+		setFlag(TILESTATE_SUPPORTS_HANGABLE);
 	}
 
 	if (item->getTeleport()) {
@@ -1627,9 +1680,34 @@ void Tile::setTileFlags(std::shared_ptr<Item> item) {
 		setFlag(TILESTATE_BED);
 	}
 
-	std::shared_ptr<Container> container = item->getContainer();
-	if (container && container->getDepotLocker()) {
-		setFlag(TILESTATE_DEPOT);
+	if (item->hasProperty(CONST_PROP_IMMOVABLEBLOCKPATH)) {
+		setFlag(TILESTATE_IMMOVABLEBLOCKPATH);
+	}
+
+	if (item->hasProperty(CONST_PROP_MOVABLE)) {
+		setFlag(TILESTATE_MOVABLE);
+	}
+
+	if (item->hasProperty(CONST_PROP_ISHORIZONTAL)) {
+		setFlag(TILESTATE_ISHORIZONTAL);
+	}
+
+	if (item->hasProperty(CONST_PROP_ISVERTICAL)) {
+		setFlag(TILESTATE_ISVERTICAL);
+	}
+
+	if (item->hasProperty(CONST_PROP_BLOCKPROJECTILE)) {
+		setFlag(TILESTATE_BLOCKPROJECTILE);
+	}
+
+	if (item->hasProperty(CONST_PROP_HASHEIGHT)) {
+		setFlag(TILESTATE_HASHEIGHT);
+	}
+
+	if (const auto &container = item->getContainer()) {
+		if (container->getDepotLocker()) {
+			setFlag(TILESTATE_DEPOT);
+		}
 	}
 
 	if (item->hasProperty(CONST_PROP_SUPPORTHANGABLE)) {
@@ -1637,7 +1715,7 @@ void Tile::setTileFlags(std::shared_ptr<Item> item) {
 	}
 }
 
-void Tile::resetTileFlags(std::shared_ptr<Item> item) {
+void Tile::resetTileFlags(const std::shared_ptr<Item> &item) {
 	const ItemType &it = Item::items[item->getID()];
 	if (it.floorChange != 0) {
 		resetFlag(TILESTATE_FLOORCHANGE);
@@ -1667,6 +1745,26 @@ void Tile::resetTileFlags(std::shared_ptr<Item> item) {
 		resetFlag(TILESTATE_IMMOVABLENOFIELDBLOCKPATH);
 	}
 
+	if (item->hasProperty(CONST_PROP_MOVABLE) && !hasProperty(item, CONST_PROP_MOVABLE)) {
+		resetFlag(TILESTATE_MOVABLE);
+	}
+
+	if (item->hasProperty(CONST_PROP_ISHORIZONTAL) && !hasProperty(item, CONST_PROP_ISHORIZONTAL)) {
+		resetFlag(TILESTATE_ISHORIZONTAL);
+	}
+
+	if (item->hasProperty(CONST_PROP_ISVERTICAL) && !hasProperty(item, CONST_PROP_ISVERTICAL)) {
+		resetFlag(TILESTATE_ISVERTICAL);
+	}
+
+	if (item->hasProperty(CONST_PROP_BLOCKPROJECTILE) && !hasProperty(item, CONST_PROP_BLOCKPROJECTILE)) {
+		resetFlag(TILESTATE_BLOCKPROJECTILE);
+	}
+
+	if (item->hasProperty(CONST_PROP_HASHEIGHT) && !hasProperty(item, CONST_PROP_HASHEIGHT)) {
+		resetFlag(TILESTATE_HASHEIGHT);
+	}
+
 	if (item->getTeleport()) {
 		resetFlag(TILESTATE_TELEPORT);
 	}
@@ -1687,9 +1785,10 @@ void Tile::resetTileFlags(std::shared_ptr<Item> item) {
 		resetFlag(TILESTATE_BED);
 	}
 
-	std::shared_ptr<Container> container = item->getContainer();
-	if (container && container->getDepotLocker()) {
-		resetFlag(TILESTATE_DEPOT);
+	if (const auto &container = item->getContainer()) {
+		if (container->getDepotLocker()) {
+			resetFlag(TILESTATE_DEPOT);
+		}
 	}
 
 	if (item->hasProperty(CONST_PROP_SUPPORTHANGABLE)) {
@@ -1697,7 +1796,7 @@ void Tile::resetTileFlags(std::shared_ptr<Item> item) {
 	}
 }
 
-bool Tile::isMoveableBlocking() const {
+bool Tile::isMovableBlocking() const {
 	return !ground || hasFlag(TILESTATE_BLOCKSOLID);
 }
 
@@ -1732,12 +1831,8 @@ std::shared_ptr<Item> Tile::getDoorItem() const {
 	return nullptr;
 }
 
-phmap::flat_hash_set<std::shared_ptr<Zone>> Tile::getZones() {
-	return zones;
-}
-
 void Tile::addZone(std::shared_ptr<Zone> zone) {
-	zones.insert(zone);
+	zones.emplace(zone);
 	const auto &items = getItemList();
 	if (items) {
 		for (const auto &item : *items) {
@@ -1753,12 +1848,12 @@ void Tile::addZone(std::shared_ptr<Zone> zone) {
 }
 
 void Tile::clearZones() {
-	phmap::flat_hash_set<std::shared_ptr<Zone>> zonesToRemove;
+	std::vector<std::shared_ptr<Zone>> zonesToRemove;
 	for (const auto &zone : zones) {
 		if (zone->isStatic()) {
 			continue;
 		}
-		zonesToRemove.insert(zone);
+		zonesToRemove.emplace_back(zone);
 		const auto &items = getItemList();
 		if (items) {
 			for (const auto &item : *items) {

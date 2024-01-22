@@ -17,7 +17,6 @@ local config = {
 		to = Position(33654, 32765, 11),
 	},
 	exit = Position(33319, 32318, 13),
-	storage = Storage.FerumbrasAscension.ZamuloshTimer,
 }
 
 local zamuloshSummons = {
@@ -29,16 +28,6 @@ local zamuloshSummons = {
 	Position(33644, 32756, 11),
 }
 
-local ferumbrasAscendantZamulosh = Action()
-function ferumbrasAscendantZamulosh.onUse(player, item, fromPosition, target, toPosition, isHotkey)
-	if CreateDefaultLeverBoss(player, config) then
-		for _, pos in pairs(zamuloshSummons) do
-			Game.createMonster("Zamulosh3", pos, true, true)
-		end
-		return true
-	end
-	return false
-end
-
-ferumbrasAscendantZamulosh:uid(1026)
-ferumbrasAscendantZamulosh:register()
+local lever = BossLever(config)
+lever:uid(1026)
+lever:register()

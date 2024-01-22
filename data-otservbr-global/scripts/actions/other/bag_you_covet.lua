@@ -15,6 +15,8 @@ local rewards = {
 	{ id = 43887, name = "Sanguine Galoshes" },
 }
 
+BagYouCovetId = 43898
+
 local bagyouCovet = Action()
 
 function bagyouCovet.onUse(player, item, fromPosition, target, toPosition, isHotkey)
@@ -25,8 +27,15 @@ function bagyouCovet.onUse(player, item, fromPosition, target, toPosition, isHot
 	item:remove(1)
 
 	player:sendTextMessage(MESSAGE_EVENT_ADVANCE, "You received a " .. rewardItem.name .. ".")
+
+	local text = player:getName() .. " received a " .. rewardItem.name .. " from a " .. item:getName() .. "."
+	local vocation = player:vocationAbbrev()
+	Webhook.sendMessage(":game_die: " .. player:getMarkdownLink() .. " received a **" .. rewardItem.name .. "** from a _" .. item:getName() .. "_.")
+	Broadcast(text, function(targetPlayer)
+		return targetPlayer ~= player
+	end)
 	return true
 end
 
-bagyouCovet:id(43895)
+bagyouCovet:id(BagYouCovetId)
 bagyouCovet:register()

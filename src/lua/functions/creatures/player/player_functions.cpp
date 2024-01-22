@@ -20,6 +20,7 @@
 #include "items/item.hpp"
 #include "lua/functions/creatures/player/player_functions.hpp"
 #include "game/scheduling/save_manager.hpp"
+#include "game/scheduling/dispatcher.hpp"
 #include "map/spectators.hpp"
 
 int PlayerFunctions::luaPlayerSendInventory(lua_State* L) {
@@ -328,8 +329,7 @@ int PlayerFunctions::luaPlayerIsMonsterBestiaryUnlocked(lua_State* L) {
 		return 0;
 	}
 
-	for (auto finishedMonsters = g_iobestiary().getBestiaryFinished(player);
-		 uint16_t finishedRaceId : finishedMonsters) {
+	for (uint16_t finishedRaceId : g_iobestiary().getBestiaryFinished(player)) {
 		if (raceId == finishedRaceId) {
 			pushBoolean(L, true);
 			return 1;
@@ -461,10 +461,25 @@ int PlayerFunctions::luaPlayerGetPreyLootPercentage(lua_State* L) {
 	return 1;
 }
 
+int PlayerFunctions::luaPlayerisMonsterPrey(lua_State* L) {
+	// player:isMonsterPrey(raceid)
+	if (std::shared_ptr<Player> player = getUserdataShared<Player>(L, 1)) {
+		if (const std::unique_ptr<PreySlot> &slot = player->getPreyWithMonster(getNumber<uint16_t>(L, 2, 0));
+			slot && slot->isOccupied()) {
+			pushBoolean(L, true);
+		} else {
+			pushBoolean(L, false);
+		}
+	} else {
+		lua_pushnil(L);
+	}
+	return 1;
+}
+
 int PlayerFunctions::luaPlayerPreyThirdSlot(lua_State* L) {
 	// get: player:preyThirdSlot() set: player:preyThirdSlot(bool)
-	if (const auto &player = getUserdataShared<Player>(L, 1)) {
-		const auto &slot = player->getPreySlotById(PreySlot_Three);
+	if (std::shared_ptr<Player> player = getUserdataShared<Player>(L, 1);
+		const auto &slot = player->getPreySlotById(PreySlot_Three)) {
 		if (!slot) {
 			lua_pushnil(L);
 		} else if (lua_gettop(L) == 1) {
@@ -984,16 +999,17 @@ int PlayerFunctions::luaPlayerGetMaxMana(lua_State* L) {
 
 int PlayerFunctions::luaPlayerSetMaxMana(lua_State* L) {
 	// player:setMaxMana(maxMana)
-	std::shared_ptr<Player> player = getPlayer(L, 1);
-	if (player) {
-		player->manaMax = getNumber<int32_t>(L, 2);
-		player->mana = std::min<int32_t>(player->mana, player->manaMax);
-		g_game().addPlayerMana(player);
-		player->sendStats();
-		pushBoolean(L, true);
-	} else {
-		lua_pushnil(L);
+	const auto &player = getPlayer(L, 1);
+	if (!player) {
+		reportErrorFunc(getErrorDesc(LUA_ERROR_PLAYER_NOT_FOUND));
+		return 1;
 	}
+
+	player->manaMax = getNumber<int32_t>(L, 2);
+	player->mana = std::min<int32_t>(player->mana, player->manaMax);
+	g_game().addPlayerMana(player);
+	player->sendStats();
+	pushBoolean(L, true);
 	return 1;
 }
 
@@ -1887,6 +1903,22 @@ int PlayerFunctions::luaPlayerAddItemEx(lua_State* L) {
 		ScriptEnvironment::removeTempItem(item);
 	}
 	lua_pushnumber(L, returnValue);
+	return 1;
+}
+
+int PlayerFunctions::luaPlayerAddItemStash(lua_State* L) {
+	// player:addItemStash(itemId, count = 1)
+	std::shared_ptr<Player> player = getUserdataShared<Player>(L, 1);
+	if (!player) {
+		lua_pushnil(L);
+		return 1;
+	}
+
+	auto itemId = getNumber<uint16_t>(L, 2);
+	auto count = getNumber<uint32_t>(L, 3, 1);
+
+	player->addItemOnStash(itemId, count);
+	pushBoolean(L, true);
 	return 1;
 }
 
@@ -3699,6 +3731,24 @@ int PlayerFunctions::luaPlayerGetName(lua_State* L) {
 	return 1;
 }
 
+int PlayerFunctions::luaPlayerChangeName(lua_State* L) {
+	// player:changeName(newName)
+	const auto player = getUserdataShared<Player>(L, 1);
+	if (!player) {
+		reportErrorFunc(getErrorDesc(LUA_ERROR_PLAYER_NOT_FOUND));
+		pushBoolean(L, false);
+		return 0;
+	}
+	if (player->isOnline()) {
+		player->removePlayer(true, true);
+	}
+	player->kv()->remove("namelock");
+	auto newName = getString(L, 2);
+	player->setName(newName);
+	g_saveManager().savePlayer(player);
+	return 1;
+}
+
 int PlayerFunctions::luaPlayerHasGroupFlag(lua_State* L) {
 	// player:hasGroupFlag(flag)
 	std::shared_ptr<Player> player = getUserdataShared<Player>(L, 1);
@@ -3878,7 +3928,7 @@ int PlayerFunctions::luaPlayerUpgradeSpellWOD(lua_State* L) {
 }
 
 int PlayerFunctions::luaPlayerRevelationStageWOD(lua_State* L) {
-	// player:revelationStagesWOD([name[, set]])
+	// player:revelationStageWOD([name[, set]])
 	std::shared_ptr<Player> player = getUserdataShared<Player>(L, 1);
 	if (!player) {
 		lua_pushnil(L);
@@ -4104,5 +4154,22 @@ int PlayerFunctions::luaPlayerKV(lua_State* L) {
 
 	pushUserdata<KV>(L, player->kv());
 	setMetatable(L, -1, "KV");
+	return 1;
+}
+
+int PlayerFunctions::luaPlayerGetStoreInbox(lua_State* L) {
+	// player:getStoreInbox()
+	const auto &player = getUserdataShared<Player>(L, 1);
+	if (!player) {
+		lua_pushnil(L);
+		return 1;
+	}
+
+	if (auto item = player->getStoreInbox()) {
+		pushUserdata<Item>(L, item);
+		setItemMetatable(L, -1, item);
+	} else {
+		pushBoolean(L, false);
+	}
 	return 1;
 }

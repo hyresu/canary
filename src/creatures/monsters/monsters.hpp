@@ -66,7 +66,8 @@ class MonsterType {
 		std::vector<voiceBlock_t> voiceVector;
 
 		std::vector<LootBlock> lootItems;
-		std::vector<std::string> scripts;
+		// We need to keep the order of scripts, so we use a set isntead of an unordered_set
+		std::set<std::string> scripts;
 		std::vector<spellBlock_t> attackSpells;
 		std::vector<spellBlock_t> defenseSpells;
 		std::vector<summonBlock_t> summons;
@@ -136,7 +137,7 @@ class MonsterType {
 		bool targetPreferMaster = false;
 
 		Faction_t faction = FACTION_DEFAULT;
-		phmap::flat_hash_set<Faction_t> enemyFactions;
+		stdext::vector_set<Faction_t> enemyFactions;
 
 		bool canPushItems = false;
 		bool canPushCreatures = false;
@@ -185,15 +186,19 @@ public:
 	}
 
 	float getHealthMultiplier() const {
-		return info.bosstiaryClass.empty() ? g_configManager().getFloat(RATE_MONSTER_HEALTH) : g_configManager().getFloat(RATE_BOSS_HEALTH);
+		return isBoss() ? g_configManager().getFloat(RATE_BOSS_HEALTH, __FUNCTION__) : g_configManager().getFloat(RATE_MONSTER_HEALTH, __FUNCTION__);
 	}
 
 	float getAttackMultiplier() const {
-		return info.bosstiaryClass.empty() ? g_configManager().getFloat(RATE_MONSTER_ATTACK) : g_configManager().getFloat(RATE_BOSS_ATTACK);
+		return isBoss() ? g_configManager().getFloat(RATE_BOSS_ATTACK, __FUNCTION__) : g_configManager().getFloat(RATE_MONSTER_ATTACK, __FUNCTION__);
 	}
 
 	float getDefenseMultiplier() const {
-		return info.bosstiaryClass.empty() ? g_configManager().getFloat(RATE_MONSTER_DEFENSE) : g_configManager().getFloat(RATE_BOSS_DEFENSE);
+		return isBoss() ? g_configManager().getFloat(RATE_BOSS_DEFENSE, __FUNCTION__) : g_configManager().getFloat(RATE_MONSTER_DEFENSE, __FUNCTION__);
+	}
+
+	bool isBoss() const {
+		return !info.bosstiaryClass.empty();
 	}
 
 	void loadLoot(const std::shared_ptr<MonsterType> monsterType, LootBlock lootblock);

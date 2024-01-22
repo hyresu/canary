@@ -9,7 +9,6 @@
 
 #pragma once
 
-#include <unordered_set>
 #include "game/movement/position.hpp"
 #include "items/item.hpp"
 #include "creatures/creature.hpp"
@@ -211,7 +210,7 @@ public:
 
 	static bool loadFromXML(const std::string &fileName, uint16_t shiftID = 0);
 
-private:
+protected:
 	bool contains(const Position &position) const;
 
 	Position removeDestination = Position();

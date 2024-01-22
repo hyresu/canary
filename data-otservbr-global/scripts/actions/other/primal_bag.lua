@@ -13,6 +13,7 @@ local rewards = {
 	{ id = 39186, name = "charged arboreal ring" },
 }
 
+PrimalBagId = 39546
 local primalBag = Action()
 
 function primalBag.onUse(player, item, fromPosition, target, toPosition, isHotkey)
@@ -25,9 +26,15 @@ function primalBag.onUse(player, item, fromPosition, target, toPosition, isHotke
 	player:addItem(rewardItem.id, 1)
 	item:remove(1)
 
-	player:sendTextMessage(MESSAGE_EVENT_ADVANCE, "You received one " .. rewardItem.name .. ".")
+	player:sendTextMessage(MESSAGE_EVENT_ADVANCE, "You received a " .. rewardItem.name .. ".")
+	local text = player:getName() .. " received a " .. rewardItem.name .. " from a " .. item:getName() .. "."
+	local vocation = player:vocationAbbrev()
+	Webhook.sendMessage(":game_die: " .. player:getMarkdownLink() .. " received a **" .. rewardItem.name .. "** from a _" .. item:getName() .. "_.")
+	Broadcast(text, function(targetPlayer)
+		return targetPlayer ~= player
+	end)
 	return true
 end
 
-primalBag:id(39546)
+primalBag:id(PrimalBagId)
 primalBag:register()

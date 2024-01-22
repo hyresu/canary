@@ -40,6 +40,9 @@ public:
 	std::shared_ptr<Npc> getNpc() override {
 		return static_self_cast<Npc>();
 	}
+	std::shared_ptr<const Npc> getNpc() const override {
+		return static_self_cast<Npc>();
+	}
 
 	void setID() override {
 		if (id == 0) {
@@ -93,7 +96,14 @@ public:
 		npcType->info.currencyId = currency;
 	}
 
-	std::vector<ShopBlock> getShopItemVector() {
+	std::vector<ShopBlock> getShopItemVector(uint32_t playerGUID) {
+		if (playerGUID != 0) {
+			auto it = shopPlayerMap.find(playerGUID);
+			if (it != shopPlayerMap.end() && !it->second.empty()) {
+				return it->second;
+			}
+		}
+
 		return npcType->info.shopItemVector;
 	}
 
@@ -137,7 +147,7 @@ public:
 
 	void onCreatureAppear(std::shared_ptr<Creature> creature, bool isLogin) override;
 	void onRemoveCreature(std::shared_ptr<Creature> creature, bool isLogout) override;
-	void onCreatureMove(std::shared_ptr<Creature> creature, std::shared_ptr<Tile> newTile, const Position &newPos, std::shared_ptr<Tile> oldTile, const Position &oldPos, bool teleport) override;
+	void onCreatureMove(const std::shared_ptr<Creature> &creature, const std::shared_ptr<Tile> &newTile, const Position &newPos, const std::shared_ptr<Tile> &oldTile, const Position &oldPos, bool teleport) override;
 	void onCreatureSay(std::shared_ptr<Creature> creature, SpeakClasses type, const std::string &text) override;
 	void onThink(uint32_t interval) override;
 	void onPlayerBuyItem(std::shared_ptr<Player> player, uint16_t itemid, uint8_t count, uint16_t amount, bool ignore, bool inBackpacks);
@@ -156,7 +166,7 @@ public:
 		internalLight = npcType->info.light;
 	}
 
-	void addShopPlayer(const std::shared_ptr<Player> &player);
+	void addShopPlayer(const std::shared_ptr<Player> &player, const std::vector<ShopBlock> &shopItems = {});
 	void removeShopPlayer(const std::shared_ptr<Player> &player);
 	void closeAllShopWindows();
 
@@ -175,7 +185,7 @@ private:
 
 	std::map<uint32_t, uint16_t> playerInteractions;
 
-	phmap::flat_hash_map<uint32_t, std::weak_ptr<Player>> shopPlayerMap;
+	phmap::flat_hash_map<uint32_t, std::vector<ShopBlock>> shopPlayerMap;
 
 	std::shared_ptr<NpcType> npcType;
 	std::shared_ptr<SpawnNpc> spawnNpc;
@@ -188,7 +198,7 @@ private:
 
 	bool ignoreHeight;
 
-	stdext::vector_set<std::shared_ptr<Player>> playerSpectators;
+	phmap::flat_hash_set<std::shared_ptr<Player>> playerSpectators;
 	Position masterPos;
 
 	friend class LuaScriptInterface;

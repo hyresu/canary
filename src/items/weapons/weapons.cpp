@@ -252,6 +252,10 @@ void Weapon::onUsedWeapon(std::shared_ptr<Player> player, std::shared_ptr<Item> 
 	if (manaCost != 0) {
 		player->addManaSpent(manaCost);
 		player->changeMana(-static_cast<int32_t>(manaCost));
+
+		if (g_configManager().getBoolean(REFUND_BEGINNING_WEAPON_MANA, __FUNCTION__) && (item->getName() == "wand of vortex" || item->getName() == "snakebite rod")) {
+			player->changeMana(static_cast<int32_t>(manaCost));
+		}
 	}
 
 	uint32_t healthCost = getHealthCost(player);
@@ -263,7 +267,8 @@ void Weapon::onUsedWeapon(std::shared_ptr<Player> player, std::shared_ptr<Item> 
 		player->changeSoul(-static_cast<int32_t>(soul));
 	}
 
-	if (breakChance != 0 && uniform_random(1, 100) <= breakChance) {
+	bool skipRemoveBeginningWeaponAmmo = !g_configManager().getBoolean(REMOVE_BEGINNING_WEAPON_AMMO, __FUNCTION__) && (item->getName() == "arrow" || item->getName() == "bolt" || item->getName() == "spear");
+	if (!skipRemoveBeginningWeaponAmmo && breakChance != 0 && uniform_random(1, 100) <= breakChance) {
 		Weapon::decrementItemCount(item);
 		player->updateSupplyTracker(item);
 		return;
@@ -271,14 +276,14 @@ void Weapon::onUsedWeapon(std::shared_ptr<Player> player, std::shared_ptr<Item> 
 
 	switch (action) {
 		case WEAPONACTION_REMOVECOUNT:
-			if (g_configManager().getBoolean(REMOVE_WEAPON_AMMO)) {
+			if (!skipRemoveBeginningWeaponAmmo && g_configManager().getBoolean(REMOVE_WEAPON_AMMO, __FUNCTION__)) {
 				Weapon::decrementItemCount(item);
 				player->updateSupplyTracker(item);
 			}
 			break;
 
 		case WEAPONACTION_REMOVECHARGE: {
-			if (uint16_t charges = item->getCharges() != 0 && g_configManager().getBoolean(REMOVE_WEAPON_CHARGES)) {
+			if (uint16_t charges = item->getCharges() != 0 && g_configManager().getBoolean(REMOVE_WEAPON_CHARGES, __FUNCTION__)) {
 				g_game().transformItem(item, item->getID(), charges - 1);
 			}
 			break;
@@ -469,9 +474,10 @@ int32_t WeaponMelee::getElementDamage(std::shared_ptr<Player> player, std::share
 	int32_t attackValue = elementDamage;
 	float attackFactor = player->getAttackFactor();
 	uint32_t level = player->getLevel();
-	int32_t minValue = level / 5;
 
 	int32_t maxValue = Weapons::getMaxWeaponDamage(level, attackSkill, attackValue, attackFactor, true);
+	int32_t minValue = level / 5;
+
 	return -normal_random(minValue, static_cast<int32_t>(maxValue * player->getVocation()->meleeDamageMultiplier));
 }
 

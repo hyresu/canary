@@ -21,12 +21,12 @@ Raids::Raids() {
 }
 
 bool Raids::loadFromXml() {
-	if (isLoaded()) {
+	if (g_configManager().getBoolean(DISABLE_LEGACY_RAIDS, __FUNCTION__) || isLoaded()) {
 		return true;
 	}
 
 	pugi::xml_document doc;
-	auto folder = g_configManager().getString(DATA_DIRECTORY) + "/raids/raids.xml";
+	auto folder = g_configManager().getString(DATA_DIRECTORY, __FUNCTION__) + "/raids/raids.xml";
 	pugi::xml_parse_result result = doc.load_file(folder.c_str());
 	if (!result) {
 		printXMLError(__FUNCTION__, folder, result);
@@ -82,7 +82,7 @@ bool Raids::loadFromXml() {
 		}
 
 		auto newRaid = std::make_shared<Raid>(name, interval, margin, repeat);
-		if (newRaid->loadFromXml(g_configManager().getString(DATA_DIRECTORY) + "/raids/" + file)) {
+		if (newRaid->loadFromXml(g_configManager().getString(DATA_DIRECTORY, __FUNCTION__) + "/raids/" + file)) {
 			raidList.push_back(newRaid);
 		} else {
 			g_logger().error("{} - Failed to load raid: {}", __FUNCTION__, name);
@@ -96,7 +96,7 @@ bool Raids::loadFromXml() {
 static constexpr int32_t MAX_RAND_RANGE = 10000000;
 
 bool Raids::startup() {
-	if (!isLoaded() || isStarted()) {
+	if (!isLoaded() || isStarted() || g_configManager().getBoolean(DISABLE_LEGACY_RAIDS, __FUNCTION__)) {
 		return false;
 	}
 
@@ -109,6 +109,9 @@ bool Raids::startup() {
 }
 
 void Raids::checkRaids() {
+	if (g_configManager().getBoolean(DISABLE_LEGACY_RAIDS, __FUNCTION__)) {
+		return;
+	}
 	if (!getRunning()) {
 		uint64_t now = OTSYS_TIME();
 
@@ -316,7 +319,7 @@ bool AnnounceEvent::configureRaidEvent(const pugi::xml_node &eventNode) {
 
 bool AnnounceEvent::executeEvent() {
 	g_game().broadcastMessage(message, messageType);
-	g_webhook().sendMessage("Incoming raid!", message, WEBHOOK_COLOR_RAID);
+	g_webhook().sendMessage(fmt::format(":space_invader: {}", message));
 	return true;
 }
 
@@ -537,7 +540,7 @@ bool AreaSpawnEvent::executeEvent() {
 			bool success = false;
 			for (int32_t tries = 0; tries < MAXIMUM_TRIES_PER_MONSTER; tries++) {
 				std::shared_ptr<Tile> tile = g_game().map.getTile(static_cast<uint16_t>(uniform_random(fromPos.x, toPos.x)), static_cast<uint16_t>(uniform_random(fromPos.y, toPos.y)), static_cast<uint8_t>(uniform_random(fromPos.z, toPos.z)));
-				if (tile && !tile->isMoveableBlocking() && !tile->hasFlag(TILESTATE_PROTECTIONZONE) && tile->getTopCreature() == nullptr && g_game().placeCreature(monster, tile->getPosition(), false, true)) {
+				if (tile && !tile->isMovableBlocking() && !tile->hasFlag(TILESTATE_PROTECTIONZONE) && tile->getTopCreature() == nullptr && g_game().placeCreature(monster, tile->getPosition(), false, true)) {
 					success = true;
 					monster->setForgeMonster(false);
 					break;
@@ -566,7 +569,7 @@ bool ScriptEvent::configureRaidEvent(const pugi::xml_node &eventNode) {
 
 	std::string scriptName = std::string(scriptAttribute.as_string());
 
-	if (!loadScript(g_configManager().getString(DATA_DIRECTORY) + "/raids/scripts/" + scriptName, scriptName)) {
+	if (!loadScript(g_configManager().getString(DATA_DIRECTORY, __FUNCTION__) + "/raids/scripts/" + scriptName, scriptName)) {
 		g_logger().error("[{}] can not load raid script: {}", __FUNCTION__, scriptName);
 		return false;
 	}

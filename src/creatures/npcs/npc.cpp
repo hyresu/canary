@@ -16,6 +16,7 @@
 #include "lua/callbacks/creaturecallback.hpp"
 #include "game/scheduling/dispatcher.hpp"
 #include "map/spectators.hpp"
+#include "lib/metrics/metrics.hpp"
 
 int32_t Npc::despawnRange;
 int32_t Npc::despawnRadius;
@@ -36,7 +37,7 @@ Npc::Npc(const std::shared_ptr<NpcType> &npcType) :
 	npcType(npcType) {
 	defaultOutfit = npcType->info.outfit;
 	currentOutfit = npcType->info.outfit;
-	float multiplier = g_configManager().getFloat(RATE_NPC_HEALTH);
+	float multiplier = g_configManager().getFloat(RATE_NPC_HEALTH, __FUNCTION__);
 	health = npcType->info.health * multiplier;
 	healthMax = npcType->info.healthMax * multiplier;
 	baseSpeed = npcType->info.baseSpeed;
@@ -113,7 +114,7 @@ void Npc::onRemoveCreature(std::shared_ptr<Creature> creature, bool isLogout) {
 	shopPlayerMap.clear();
 }
 
-void Npc::onCreatureMove(std::shared_ptr<Creature> creature, std::shared_ptr<Tile> newTile, const Position &newPos, std::shared_ptr<Tile> oldTile, const Position &oldPos, bool teleport) {
+void Npc::onCreatureMove(const std::shared_ptr<Creature> &creature, const std::shared_ptr<Tile> &newTile, const Position &newPos, const std::shared_ptr<Tile> &oldTile, const Position &oldPos, bool teleport) {
 	Creature::onCreatureMove(creature, newTile, newPos, oldTile, oldPos, teleport);
 
 	// onCreatureMove(self, creature, oldPosition, newPosition)
@@ -134,7 +135,7 @@ void Npc::onCreatureMove(std::shared_ptr<Creature> creature, std::shared_ptr<Til
 		closeAllShopWindows();
 	}
 
-	if (auto player = creature->getPlayer()) {
+	if (const auto &player = creature->getPlayer()) {
 		handlePlayerMove(player, newPos);
 	}
 }
@@ -151,7 +152,7 @@ void Npc::onPlayerAppear(std::shared_ptr<Player> player) {
 	if (player->hasFlag(PlayerFlags_t::IgnoredByNpcs) || playerSpectators.contains(player)) {
 		return;
 	}
-	playerSpectators.emplace_back(player);
+	playerSpectators.emplace(player);
 	manageIdle();
 }
 
@@ -261,7 +262,7 @@ void Npc::onPlayerBuyItem(std::shared_ptr<Player> player, uint16_t itemId, uint8
 	}
 
 	uint32_t buyPrice = 0;
-	const std::vector<ShopBlock> &shopVector = getShopItemVector();
+	const std::vector<ShopBlock> &shopVector = getShopItemVector(player->getGUID());
 	for (ShopBlock shopBlock : shopVector) {
 		if (itemType.id == shopBlock.itemId && shopBlock.itemBuyPrice != 0) {
 			buyPrice = shopBlock.itemBuyPrice;
@@ -279,6 +280,7 @@ void Npc::onPlayerBuyItem(std::shared_ptr<Player> player, uint16_t itemId, uint8
 	if (getCurrency() == ITEM_GOLD_COIN && (player->getMoney() + player->getBankBalance()) < totalCost) {
 		g_logger().error("[Npc::onPlayerBuyItem (getMoney)] - Player {} have a problem for buy item {} on shop for npc {}", player->getName(), itemId, getName());
 		g_logger().debug("[Information] Player {} tried to buy item {} on shop for npc {}, at position {}", player->getName(), itemId, getName(), player->getPosition().toString());
+		g_metrics().addCounter("balance_decrease", totalCost, { { "player", player->getName() }, { "context", "npc_purchase" } });
 		return;
 	} else if (getCurrency() != ITEM_GOLD_COIN && (player->getItemTypeCount(getCurrency()) < totalCost || ((player->getMoney() + player->getBankBalance()) < bagsCost))) {
 		g_logger().error("[Npc::onPlayerBuyItem (getItemTypeCount)] - Player {} have a problem for buy item {} on shop for npc {}", player->getName(), itemId, getName());
@@ -370,7 +372,7 @@ void Npc::onPlayerSellItem(std::shared_ptr<Player> player, uint16_t itemId, uint
 
 	uint32_t sellPrice = 0;
 	const ItemType &itemType = Item::items[itemId];
-	const std::vector<ShopBlock> &shopVector = getShopItemVector();
+	const std::vector<ShopBlock> &shopVector = getShopItemVector(player->getGUID());
 	for (ShopBlock shopBlock : shopVector) {
 		if (itemType.id == shopBlock.itemId && shopBlock.itemSellPrice != 0) {
 			sellPrice = shopBlock.itemSellPrice;
@@ -381,7 +383,7 @@ void Npc::onPlayerSellItem(std::shared_ptr<Player> player, uint16_t itemId, uint
 	}
 
 	auto toRemove = amount;
-	for (auto inventoryItems = player->getInventoryItemsFromId(itemId, ignore); auto item : inventoryItems) {
+	for (auto item : player->getInventoryItemsFromId(itemId, ignore)) {
 		if (!item || item->getTier() > 0 || item->hasImbuements()) {
 			continue;
 		}
@@ -411,11 +413,12 @@ void Npc::onPlayerSellItem(std::shared_ptr<Player> player, uint16_t itemId, uint
 	auto totalCost = static_cast<uint64_t>(sellPrice * totalRemoved);
 	if (getCurrency() == ITEM_GOLD_COIN) {
 		totalPrice += totalCost;
-		if (g_configManager().getBoolean(AUTOBANK)) {
+		if (g_configManager().getBoolean(AUTOBANK, __FUNCTION__)) {
 			player->setBankBalance(player->getBankBalance() + totalCost);
 		} else {
 			g_game().addMoney(player, totalCost);
 		}
+		g_metrics().addCounter("balance_increase", totalCost, { { "player", player->getName() }, { "context", "npc_sale" } });
 	} else {
 		std::shared_ptr<Item> newItem = Item::CreateItem(getCurrency(), totalCost);
 		if (newItem) {
@@ -531,7 +534,7 @@ void Npc::onThinkWalk(uint32_t interval) {
 
 void Npc::onCreatureWalk() {
 	Creature::onCreatureWalk();
-	playerSpectators.erase_if([this](const auto &creature) { return !this->canSee(creature->getPosition()); });
+	phmap::erase_if(playerSpectators, [this](const auto &creature) { return !this->canSee(creature->getPosition()); });
 }
 
 void Npc::onPlacedCreature() {
@@ -542,7 +545,7 @@ void Npc::loadPlayerSpectators() {
 	auto spec = Spectators().find<Player>(position, true);
 	for (const auto &creature : spec) {
 		if (!creature->getPlayer()->hasFlag(PlayerFlags_t::IgnoredByNpcs)) {
-			playerSpectators.emplace_back(creature->getPlayer());
+			playerSpectators.emplace(creature->getPlayer());
 		}
 	}
 }
@@ -642,23 +645,25 @@ bool Npc::getRandomStep(Direction &moveDirection) {
 	return false;
 }
 
-void Npc::addShopPlayer(const std::shared_ptr<Player> &player) {
+void Npc::addShopPlayer(const std::shared_ptr<Player> &player, const std::vector<ShopBlock> &shopItems /* = {}*/) {
 	if (!player) {
 		return;
 	}
-	shopPlayerMap.try_emplace(player->getID(), player);
+
+	shopPlayerMap.try_emplace(player->getGUID(), shopItems);
 }
 
 void Npc::removeShopPlayer(const std::shared_ptr<Player> &player) {
 	if (!player) {
 		return;
 	}
-	shopPlayerMap.erase(player->getID());
+
+	shopPlayerMap.erase(player->getGUID());
 }
 
 void Npc::closeAllShopWindows() {
-	for (auto &[_, playerPtr] : shopPlayerMap) {
-		auto shopPlayer = playerPtr.lock();
+	for (const auto &[playerGUID, playerPtr] : shopPlayerMap) {
+		auto shopPlayer = g_game().getPlayerByGUID(playerGUID);
 		if (shopPlayer) {
 			shopPlayer->closeShopWindow();
 		}

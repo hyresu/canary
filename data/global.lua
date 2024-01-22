@@ -19,6 +19,10 @@ function IsRetroPVP()
 	return configManager.getBoolean(configKeys.TOGGLE_SERVER_IS_RETRO)
 end
 
+function IsTravelFree()
+	return configManager.getBoolean(configKeys.TOGGLE_TRAVELS_FREE)
+end
+
 -- NOTE: 0 is disabled.
 PARTY_PROTECTION = (IsRetroPVP() and 0) or 1
 ADVANCED_SECURE_MODE = (IsRetroPVP() and 0) or 1
@@ -82,48 +86,31 @@ SCARLETT_MAY_DIE = 0
 ropeSpots = { 386, 421, 386, 7762, 12202, 12936, 14238, 17238, 23363, 21965, 21966, 21967, 21968 }
 specialRopeSpots = { 12935 }
 
--- Impact Analyser
-if not GlobalBosses then
-	GlobalBosses = {}
+-- Global tables for systems
+if not _G.GlobalBosses then
+	_G.GlobalBosses = {}
 end
 
--- Healing
--- Global table to insert data
-if healingImpact == nil then
-	healingImpact = {}
-end
-
--- Damage
--- Global table to insert data
-if damageImpact == nil then
-	damageImpact = {}
-end
-
--- Exercise Training
-if onExerciseTraining == nil then
-	onExerciseTraining = {}
+if not _G.OnExerciseTraining then
+	_G.OnExerciseTraining = {}
 end
 
 -- Stamina
-if nextUseStaminaTime == nil then
-	nextUseStaminaTime = {}
+if not _G.NextUseStaminaTime then
+	_G.NextUseStaminaTime = {}
 end
 
-if nextUseXpStamina == nil then
-	nextUseXpStamina = {}
+if not _G.NextUseXpStamina then
+	_G.NextUseXpStamina = {}
 end
 
-if nextUseConcoctionTime == nil then
-	nextUseConcoctionTime = {}
-end
-
-if lastItemImbuing == nil then
-	lastItemImbuing = {}
+if not _G.NextUseConcoctionTime then
+	_G.NextUseConcoctionTime = {}
 end
 
 -- Delay potion
-if not playerDelayPotion then
-	playerDelayPotion = {}
+if not _G.PlayerDelayPotion then
+	_G.PlayerDelayPotion = {}
 end
 
 table.contains = function(array, value)
@@ -176,7 +163,7 @@ function addStamina(playerId, ...)
 					staminaBonus.eventsTrainer[playerId] = nil
 				else
 					player:setStamina(player:getStamina() + staminaBonus.bonus)
-					player:sendTextMessage(MESSAGE_STATUS, string.format("%i of stamina has been refilled.", configManager.getNumber(configKeys.STAMINA_TRAINER_GAIN)))
+					player:sendTextMessage(MESSAGE_FAILURE, string.format("%i of stamina has been refilled.", configManager.getNumber(configKeys.STAMINA_TRAINER_GAIN)))
 					staminaBonus.eventsTrainer[playerId] = addEvent(addStamina, staminaBonus.period, playerId)
 				end
 			end
@@ -213,8 +200,9 @@ function addStamina(playerId, ...)
 			return false
 		end
 
-		player:setStamina(player:getStamina() + configManager.getNumber(configKeys.STAMINA_PZ_GAIN))
-		player:sendTextMessage(MESSAGE_STATUS, string.format("%i of stamina has been refilled.", configManager.getNumber(configKeys.STAMINA_PZ_GAIN)))
+		local regen = configManager.getNumber(configKeys.STAMINA_PZ_GAIN)
+		player:setStamina(player:getStamina() + regen)
+		player:sendTextMessage(MESSAGE_FAILURE, string.format("%i minute%s of stamina has been refilled.", regen, regen == 1 and "" or "s"))
 		staminaBonus.eventsPz[localPlayerId] = addEvent(addStamina, delay, nil, localPlayerId, delay)
 		return true
 	end
